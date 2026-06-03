@@ -1,40 +1,69 @@
 from flask import Flask, request, jsonify
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 import io
 import os
-import onnxruntime as ort
+import keras
 
 app = Flask(__name__)
 
-MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model", "skin_classifier.onnx"))
-CLASS_NAMES = ["dry", "normal", "oil"]
-session = ort.InferenceSession(MODEL_PATH, providers=["CPUExecutionProvider"])
-input_name = session.get_inputs()[0].name
-input_shape = session.get_inputs()[0].shape
-DETECT_MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model", "skin_conditions.onnx"))
-CONDITION_NAMES = ["acne", "blackheads", "dark spots", "pores", "wrinkles"]
-session2 = ort.InferenceSession(DETECT_MODEL_PATH, providers=["CPUExecutionProvider"]) if os.path.exists(DETECT_MODEL_PATH) else None
-input2_name = session2.get_inputs()[0].name if session2 else None
-input2_shape = session2.get_inputs()[0].shape if session2 else None
+MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model"))
+TYPE_MODEL_PATH = os.path.join(MODEL_DIR, "best_skinalyst_patch_cnn.keras")
+COND_MODEL_PATH = os.path.join(MODEL_DIR, "best_skin_condition_custom_cnn.keras")
+
+# Skin type model (SkinAlyst patch CNN)
+TYPE_CLASSES = ["dry", "normal", "oil"]
+TYPE_IMG_SIZE = 160
+# Relative [left, top, right, bottom] crop boxes for 5 face regions
+TYPE_CROP_BOXES = [
+    [0.25, 0.25, 0.75, 0.75],  # center
+    [0.12, 0.35, 0.48, 0.78],  # left cheek
+    [0.52, 0.35, 0.88, 0.78],  # right cheek
+    [0.30, 0.12, 0.70, 0.42],  # forehead
+    [0.30, 0.58, 0.70, 0.92],  # chin
+]
+
+# Skin condition model (SkinCondition custom CNN)
+# Note: model class "blackheades" is normalized to "blackheads" in responses
+COND_CLASSES = ["acne", "blackheads", "dark spots", "pores", "wrinkles"]
+COND_IMG_SIZE = 192
+
+print("Loading skin type model...")
+type_model = keras.saving.load_model(TYPE_MODEL_PATH)
+print("Loading skin condition model...")
+cond_model = keras.saving.load_model(COND_MODEL_PATH)
+print("Both models loaded.")
 
 
-def preprocess_image(img: Image.Image):
-    img = img.convert("RGB")
-    img = img.resize((224, 224))
-    arr = np.array(img).astype("float32") / 255.0
-    arr = np.expand_dims(arr, axis=0)
-    if len(input_shape) == 4 and (input_shape[1] == 3 or (isinstance(input_shape[1], str) and input_shape[1].lower() == "c")):
-        arr = np.transpose(arr, (0, 3, 1, 2))
-    return arr
-def preprocess_image2(img: Image.Image):
-    img = img.convert("RGB")
-    img = img.resize((224, 224))
-    arr = np.array(img).astype("float32") / 255.0
-    arr = np.expand_dims(arr, axis=0)
-    if input2_shape and len(input2_shape) == 4 and (input2_shape[1] == 3 or (isinstance(input2_shape[1], str) and input2_shape[1].lower() == "c")):
-        arr = np.transpose(arr, (0, 3, 1, 2))
-    return arr
+def _load_image_from_request():
+    if "file" in request.files:
+        return Image.open(request.files["file"].stream)
+    data = request.get_json(silent=True) or {}
+    image_bytes = data.get("image_bytes")
+    if image_bytes:
+        return Image.open(io.BytesIO(bytes(image_bytes)))
+    return None
+
+
+def _extract_type_patches(img):
+    """Crop 5 face-region patches, blur, resize to 160x160, normalize."""
+    w, h = img.size
+    patches = []
+    for box in TYPE_CROP_BOXES:
+        left, top, right, bottom = (
+            int(box[0] * w), int(box[1] * h),
+            int(box[2] * w), int(box[3] * h),
+        )
+        patch = img.crop((left, top, right, bottom))
+        patch = patch.filter(ImageFilter.GaussianBlur(radius=1))
+        patch = patch.resize((TYPE_IMG_SIZE, TYPE_IMG_SIZE))
+        patches.append(np.array(patch).astype("float32") / 255.0)
+    return np.stack(patches, axis=0)  # (5, 160, 160, 3)
+
+
+def _preprocess_conditions(img):
+    img = img.resize((COND_IMG_SIZE, COND_IMG_SIZE))
+    return np.expand_dims(np.array(img).astype("float32") / 255.0, axis=0)  # (1, 192, 192, 3)
 
 
 @app.get("/health")
@@ -44,58 +73,35 @@ def health():
 
 @app.post("/predict")
 def predict():
-    if "file" in request.files:
-        file = request.files["file"]
-        img = Image.open(file.stream)
-    else:
-        data = request.get_json(silent=True) or {}
-        image_bytes = data.get("image_bytes")
-        if not image_bytes:
-            return jsonify({"error": "no image provided"}), 400
-        img = Image.open(io.BytesIO(bytes(image_bytes)))
+    img = _load_image_from_request()
+    if img is None:
+        return jsonify({"error": "no image provided"}), 400
 
-    x = preprocess_image(img)
-    outputs = session.run(None, {input_name: x})
-    probs = outputs[0]
-    if probs.ndim == 2:
-        probs = probs[0]
-    probs = probs.astype("float32")
-    s = float(np.sum(probs))
-    if not np.isfinite(s) or abs(s - 1.0) > 1e-3:
-        e = probs - np.max(probs)
-        probs = np.exp(e) / np.sum(np.exp(e))
-    idx = int(np.argmax(probs))
-    conf = float(probs[idx])
-    return jsonify({"type": CLASS_NAMES[idx], "confidence": conf})
+    img = img.convert("RGB")
+    patches = _extract_type_patches(img)          # (5, 160, 160, 3)
+    all_probs = type_model.predict(patches, verbose=0)  # (5, 3)
+    avg_probs = np.mean(all_probs, axis=0)        # (3,)
+    idx = int(np.argmax(avg_probs))
+    return jsonify({"type": TYPE_CLASSES[idx], "confidence": float(avg_probs[idx])})
+
 
 @app.post("/detect")
 def detect():
-    if session2 is None:
-        return jsonify({"error": "conditions model not found"}), 500
-    if "file" in request.files:
-        file = request.files["file"]
-        img = Image.open(file.stream)
-    else:
-        data = request.get_json(silent=True) or {}
-        image_bytes = data.get("image_bytes")
-        if not image_bytes:
-            return jsonify({"error": "no image provided"}), 400
-        img = Image.open(io.BytesIO(bytes(image_bytes)))
-    x = preprocess_image2(img)
-    outputs = session2.run(None, {input2_name: x})
-    logits = outputs[0]
-    if logits.ndim == 2:
-        logits = logits[0]
-    logits = logits.astype("float32")
-    e = logits - np.max(logits)
-    probs = np.exp(e) / np.sum(np.exp(e))
-    probs = probs.tolist()
-    dets = []
-    for i, label in enumerate(CONDITION_NAMES[: len(probs)]):
-        dets.append({"label": label, "confidence": float(probs[i])})
+    img = _load_image_from_request()
+    if img is None:
+        return jsonify({"error": "no image provided"}), 400
+
+    img = img.convert("RGB")
+    x = _preprocess_conditions(img)                     # (1, 192, 192, 3)
+    probs = cond_model.predict(x, verbose=0)[0]          # (5,)
+    dets = [
+        {"label": COND_CLASSES[i], "confidence": float(probs[i])}
+        for i in range(len(COND_CLASSES))
+    ]
     dets.sort(key=lambda d: d["confidence"], reverse=True)
     return jsonify({"detections": dets})
 
+
 if __name__ == "__main__":
-    print("✅ Service is running on http://127.0.0.1:5000")
+    print("Service is running on http://127.0.0.1:5000")
     app.run(host="0.0.0.0", port=5000)
