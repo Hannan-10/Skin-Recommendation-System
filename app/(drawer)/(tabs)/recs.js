@@ -1,0 +1,54 @@
+
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter, Stack } from 'expo-router';
+
+export default function Recs() {
+  const router = useRouter();
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <TouchableOpacity style={styles.backArrow} onPress={() => router.back()}>
+        <Ionicons name="arrow-back" size={28} color="#E75480" />
+      </TouchableOpacity>
+
+      <View style={styles.content}>
+        <View style={styles.iconCircle}>
+          <Ionicons name="sparkles" size={50} color="#E75480" />
+        </View>
+        
+        <Text style={styles.title}>Your Personalized Recs</Text>
+
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>COMING SOON</Text>
+        </View>
+
+        <Text style={styles.subtitle}>
+          After your skin scan, we will suggest the perfect products for your glow.
+        </Text>
+
+        <View style={styles.placeholderCard} />
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#FFF9F6' },
+  content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  backArrow: { 
+    position: 'absolute', 
+    top: 50, // Screen ke sensors se neechay
+    left: 20, 
+    zIndex: 10,
+    padding: 10, 
+  },
+  iconCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#FFEBF1', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  title: { fontSize: 22, color: '#333', textAlign: 'center', fontFamily: 'Nunito-ExtraBold' },
+  badge: { backgroundColor: '#E75480', paddingHorizontal: 15, paddingVertical: 5, borderRadius: 20, marginVertical: 10 },
+  badgeText: { color: '#fff', fontSize: 12, fontFamily: 'Nunito-Bold' },
+  subtitle: { fontSize: 15, color: '#888', textAlign: 'center', marginTop: 5, lineHeight: 22, fontFamily: 'Nunito-Regular' },
+  placeholderCard: { width: '80%', height: 5, backgroundColor: '#FDEEF4', borderRadius: 10, marginTop: 30 }
+});

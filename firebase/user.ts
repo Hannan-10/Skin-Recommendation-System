@@ -1,0 +1,91 @@
+import { auth, db } from './index'
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, updateEmail, signOut } from 'firebase/auth'
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+
+export async function registerUser(params: { name: string; email: string; password: string; age: number; gender: string }) {
+  const { name, email, password, age, gender } = params
+  if (!auth || !db) throw new Error('firebase_not_initialized')
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, password)
+    const user = cred.user
+    try {
+      await updateProfile(user, { displayName: name })
+    } catch {}
+    const ref = doc(db, 'users', user.uid)
+    try {
+      await setDoc(ref, { uid: user.uid, name, email, age, gender, createdAt: serverTimestamp() })
+    } catch (e) {
+      console.warn('registerUser: failed to write user doc', e)
+    }
+    return { uid: user.uid }
+  } catch (e: any) {
+    throw e
+  }
+}
+
+export async function loginUser(params: { email: string; password: string }) {
+  const { email, password } = params
+  if (!auth) throw new Error('firebase_not_initialized')
+  const cred = await signInWithEmailAndPassword(auth, email, password)
+  // Ensure profile doc exists
+  try {
+    if (db) {
+      const ref = doc(db, 'users', cred.user.uid)
+      const snap = await getDoc(ref)
+      if (!snap.exists()) {
+        const base = {
+          uid: cred.user.uid,
+          name: cred.user.displayName || '',
+          email: cred.user.email || email,
+          createdAt: serverTimestamp(),
+        }
+        await setDoc(ref, base, { merge: true })
+      }
+    }
+  } catch (e) {
+    console.warn('loginUser: ensure profile doc failed', e)
+  }
+  return { uid: cred.user.uid }
+}
+
+export async function getCurrentUserProfile() {
+  if (!auth || !db) throw new Error('firebase_not_initialized')
+  const user = auth.currentUser
+  if (!user) return null
+  const ref = doc(db, 'users', user.uid)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return null
+  return snap.data()
+}
+
+export async function updateUserProfile(params: { name?: string; email?: string; age?: number; gender?: string }) {
+  if (!auth || !db) throw new Error('firebase_not_initialized')
+  const user = auth.currentUser
+  if (!user) throw new Error('not_authenticated')
+  const ref = doc(db, 'users', user.uid)
+  const updates: any = {}
+  if (params.name !== undefined) updates.name = params.name
+  if (params.age !== undefined) updates.age = params.age
+  if (params.gender !== undefined) updates.gender = params.gender
+  if (params.email !== undefined && params.email !== user.email) {
+    try {
+      await updateEmail(user, params.email)
+      updates.email = params.email
+    } catch (e) {}
+  }
+  if (params.name !== undefined) {
+    try {
+      await updateProfile(user, { displayName: params.name })
+    } catch (e) {}
+  }
+  if (Object.keys(updates).length > 0) {
+    await updateDoc(ref, updates)
+  }
+  return true
+}
+
+export async function signOutUser() {
+  if (!auth) throw new Error('firebase_not_initialized')
+  await signOut(auth)
+  return true
+}

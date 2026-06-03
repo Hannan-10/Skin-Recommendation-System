@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+
+# Python virtual environment
+.venv/
+venv/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.env*.local
+
+# Logs
+npm-debug.*
+npm-debug.log*
+yarn-debug.*
+yarn-debug.log*
+yarn-error.*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build files
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.pem
+
+# TypeScript
+*.tsbuildinfo
+
+# App example
+app-example/
+
+# Optional: large ML/model files
+model/*.h5
+model/*.keras
+model/*.pkl
+model/*.pt
+model/*.pth
+model/*.onnx
+model/*.joblib
