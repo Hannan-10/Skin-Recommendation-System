@@ -89,3 +89,42 @@ export async function signOutUser() {
   await signOut(auth)
   return true
 }
+
+export async function saveScanResult(params: {
+  skinType: string
+  conditions: { label: string; confidence: number }[]
+}) {
+  if (!auth || !db) return
+  const user = auth.currentUser
+  if (!user) return
+  const ref = doc(db, 'users', user.uid)
+  try {
+    await updateDoc(ref, {
+      lastScan: {
+        skinType: params.skinType,
+        conditions: params.conditions,
+        scannedAt: serverTimestamp(),
+      },
+    })
+  } catch (e) {
+    console.warn('saveScanResult failed', e)
+  }
+}
+
+export async function getLastScanResult(): Promise<{
+  skinType: string
+  conditions: { label: string; confidence: number }[]
+  scannedAt: any
+} | null> {
+  if (!auth || !db) return null
+  const user = auth.currentUser
+  if (!user) return null
+  const ref = doc(db, 'users', user.uid)
+  try {
+    const snap = await getDoc(ref)
+    if (!snap.exists()) return null
+    return snap.data().lastScan || null
+  } catch {
+    return null
+  }
+}

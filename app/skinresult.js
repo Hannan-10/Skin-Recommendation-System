@@ -1,6 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
+import { saveScanResult } from '../firebase/user';
 import {
   Image,
   StyleSheet,
@@ -135,6 +136,13 @@ export default function SkinResult() {
     }
   };
 
+  // Persist scan results to Firebase whenever they become available
+  useEffect(() => {
+    if (skinType && conditions.length > 0) {
+      saveScanResult({ skinType, conditions }).catch(() => {});
+    }
+  }, [skinType]);
+
   const pickFromCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return alert('Camera permission is required');
@@ -260,6 +268,23 @@ export default function SkinResult() {
               }}
             >
               <Text style={styles.primaryText}>View Suggested Routine</Text>
+            </TouchableOpacity>
+
+            {/* Product Recommendations CTA */}
+            <TouchableOpacity
+              style={styles.recsButton}
+              onPress={() =>
+                router.push({
+                  pathname: '/(drawer)/(tabs)/recs',
+                  params: {
+                    skinType,
+                    conditions: JSON.stringify(conditions),
+                  },
+                })
+              }
+            >
+              <Ionicons name="sparkles" size={18} color="#E75480" style={{ marginRight: 8 }} />
+              <Text style={styles.recsButtonText}>Get Product Recommendations</Text>
             </TouchableOpacity>
 
             {/* Secondary buttons side by side */}
@@ -434,6 +459,23 @@ const styles = StyleSheet.create({
   primaryText: {
     color: '#000',
     fontSize: 16,
+    fontFamily: 'Nunito-Bold',
+  },
+  recsButton: {
+    width: '100%',
+    paddingVertical: 15,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#E75480',
+    backgroundColor: 'rgba(242,139,168,0.08)',
+    marginBottom: 14,
+  },
+  recsButtonText: {
+    color: '#E75480',
+    fontSize: 15,
     fontFamily: 'Nunito-Bold',
   },
   secondaryRow: {
