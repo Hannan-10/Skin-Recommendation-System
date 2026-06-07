@@ -1,22 +1,26 @@
 import csv
+import json
 import os
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import numpy as np
 from PIL import Image, ImageFilter
 import io
 import keras
+import tensorflow as tf
 
 app = Flask(__name__)
+CORS(app)
 
 MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model"))
 TYPE_MODEL_PATH = os.path.join(MODEL_DIR, "best_skinalyst_patch_cnn.keras")
 COND_MODEL_PATH = os.path.join(MODEL_DIR, "best_skin_condition_custom_cnn.keras")
+REC_MODEL_PATH  = os.path.join(MODEL_DIR, "skin_product_effect_model.keras")
 
-# ── Skin type model (SkinAlyst patch CNN) ──────────────────────────────────────
+# ── Skin type model ────────────────────────────────────────────────────────────
 TYPE_CLASSES = ["dry", "normal", "oil"]
 TYPE_IMG_SIZE = 160
-# Relative [left, top, right, bottom] crop boxes for 5 face regions
 TYPE_CROP_BOXES = [
     [0.25, 0.25, 0.75, 0.75],  # center
     [0.12, 0.35, 0.48, 0.78],  # left cheek
@@ -26,30 +30,39 @@ TYPE_CROP_BOXES = [
 ]
 
 # ── Skin condition model ───────────────────────────────────────────────────────
-# "blackheades" in model labels is normalised to "blackheads" in responses
 COND_CLASSES = ["acne", "blackheads", "dark spots", "pores", "wrinkles"]
 COND_IMG_SIZE = 192
+
+# ── Recommendation label names (17 labels, model output order) ────────────────
+_LABEL_NAMES_PATH = os.path.join(os.path.dirname(__file__), "label_names.json")
+with open(_LABEL_NAMES_PATH, encoding="utf-8") as _f:
+    LABEL_NAMES = json.load(_f)   # list of 17 strings
 
 print("Loading skin type model...")
 type_model = keras.saving.load_model(TYPE_MODEL_PATH)
 print("Loading skin condition model...")
 cond_model = keras.saving.load_model(COND_MODEL_PATH)
-print("Both scan models loaded.")
+print("Loading product recommendation model...")
+rec_model  = keras.saving.load_model(REC_MODEL_PATH)
+print("All models loaded.")
 
-# ── Product recommendation data ───────────────────────────────────────────────
+# ── Product CSV ───────────────────────────────────────────────────────────────
 _CSV_PATH = os.path.join(os.path.dirname(__file__), "products_clean.csv")
 PRODUCTS = []
 if os.path.exists(_CSV_PATH):
     with open(_CSV_PATH, encoding="utf-8") as _f:
         for row in csv.DictReader(_f):
             labels = [l.strip() for l in row.get("afterUse", "").split(",") if l.strip()]
-            if labels:
-                PRODUCTS.append({
-                    "brand": row.get("brand", "").title(),
-                    "name": row.get("name", ""),
-                    "type": row.get("type", "").lower().strip(),
-                    "labels": labels,
-                })
+            if not labels:
+                continue
+            PRODUCTS.append({
+                "brand":       row.get("brand", "").title(),
+                "name":        row.get("name", ""),
+                "type":        row.get("type", "").lower().strip(),
+                "country":     row.get("country", ""),
+                "ingredients": row.get("ingredients_clean", row.get("ingridients", "")),
+                "labels":      labels,
+            })
     print(f"Loaded {len(PRODUCTS)} products for recommendation.")
 
 # Categories surfaced to the frontend (display_name -> list of CSV type values)
@@ -60,6 +73,10 @@ _REC_CATEGORIES = {
     "Sunscreen":   ["sunscreen"],
     "Treatment":   ["facial treatment", "toner", "exfoliator"],
 }
+
+# How many candidates per category to re-rank with the ML model
+_ML_CANDIDATES = 40
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -98,29 +115,29 @@ def _build_label_scores(skin_type, conditions):
     ls = {}
 
     if skin_type == "oil":
-        ls["Good For Oily Skin"] = 3
+        ls["Good For Oily Skin"]   = 3
         ls["May Worsen Oily Skin"] = -4
         ls["Drying"] = -1
     elif skin_type == "dry":
         ls["Hydrating"] = 3
-        ls["Drying"] = -4
-    else:  # normal / combination
+        ls["Drying"]    = -4
+    else:
         ls["Hydrating"] = 1
 
     for cond in conditions:
         cond = cond.lower()
         if "acne" in cond:
-            ls["Acne Fighting"]   = ls.get("Acne Fighting", 0) + 2
-            ls["Acne Trigger"]    = ls.get("Acne Trigger", 0) - 3
+            ls["Acne Fighting"]    = ls.get("Acne Fighting", 0) + 2
+            ls["Acne Trigger"]     = ls.get("Acne Trigger", 0) - 3
             ls["Redness Reducing"] = ls.get("Redness Reducing", 0) + 1
         if "blackhead" in cond:
-            ls["Acne Fighting"]      = ls.get("Acne Fighting", 0) + 1
+            ls["Acne Fighting"]       = ls.get("Acne Fighting", 0) + 1
             ls["Reduces Large Pores"] = ls.get("Reduces Large Pores", 0) + 2
-            ls["Skin Texture"]       = ls.get("Skin Texture", 0) + 1
-            ls["Acne Trigger"]       = ls.get("Acne Trigger", 0) - 2
+            ls["Skin Texture"]        = ls.get("Skin Texture", 0) + 1
+            ls["Acne Trigger"]        = ls.get("Acne Trigger", 0) - 2
         if "dark" in cond or "spot" in cond:
-            ls["Dark Spots"]  = ls.get("Dark Spots", 0) + 3
-            ls["Brightening"] = ls.get("Brightening", 0) + 2
+            ls["Dark Spots"]   = ls.get("Dark Spots", 0) + 3
+            ls["Brightening"]  = ls.get("Brightening", 0) + 2
             ls["Scar Healing"] = ls.get("Scar Healing", 0) + 1
         if "pore" in cond:
             ls["Reduces Large Pores"] = ls.get("Reduces Large Pores", 0) + 3
@@ -134,6 +151,40 @@ def _build_label_scores(skin_type, conditions):
     ls["Irritating"] = ls.get("Irritating", 0) - 2
     ls["Rosacea"]    = ls.get("Rosacea", 0) - 1
     return ls
+
+
+def _ml_rescore(candidates, label_scores):
+    """
+    Run skin_product_effect_model on a batch of candidate products.
+    Returns the original list with 'ml_score' added, sorted descending.
+    """
+    if not candidates:
+        return candidates
+
+    # Build batched string inputs — Keras TextVectorization requires tf.constant strings
+    try:
+        inputs = {
+            "ingredients":  tf.constant([[p["ingredients"]]  for p in candidates]),
+            "product_type": tf.constant([[p["type"]]         for p in candidates]),
+            "brand":        tf.constant([[p["brand"]]        for p in candidates]),
+            "country":      tf.constant([[p["country"]]      for p in candidates]),
+        }
+        probs = rec_model.predict(inputs, verbose=0, batch_size=32)  # (N, 17)
+    except Exception as e:
+        print(f"[rec_model.predict error] {e}")
+        # Fall back to initial score
+        for p in candidates:
+            p["ml_score"] = p["score"]
+        return sorted(candidates, key=lambda x: x["ml_score"], reverse=True)
+
+    # Compute ML score as dot product of probabilities with label_scores
+    label_score_vec = np.array([label_scores.get(lbl, 0.0) for lbl in LABEL_NAMES], dtype="float32")
+    ml_scores = probs @ label_score_vec  # (N,)
+
+    for i, p in enumerate(candidates):
+        p["ml_score"] = float(ml_scores[i])
+
+    return sorted(candidates, key=lambda x: x["ml_score"], reverse=True)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -176,35 +227,50 @@ def detect():
 
 @app.post("/recommend")
 def recommend():
-    data = request.get_json(silent=True) or {}
+    data       = request.get_json(silent=True) or {}
     skin_type  = data.get("skin_type", "normal").lower().strip()
-    conditions = [str(c).lower().strip() for c in data.get("conditions", [])]
+    # conditions may be strings or {label, confidence} objects
+    raw_conds  = data.get("conditions", [])
+    conditions = [
+        (c["label"] if isinstance(c, dict) else str(c)).lower().strip()
+        for c in raw_conds
+    ]
 
-    ls = _build_label_scores(skin_type, conditions)
-    max_positive = sum(v for v in ls.values() if v > 0) or 1
+    label_scores  = _build_label_scores(skin_type, conditions)
+    max_positive  = sum(v for v in label_scores.values() if v > 0) or 1
 
     results = {}
     for category, type_list in _REC_CATEGORIES.items():
+        # ── Step 1: initial label-match filter ────────────────────────────────
         scored = []
         for product in PRODUCTS:
             if product["type"] not in type_list:
                 continue
-            labels = product["labels"]
-            score = sum(ls.get(lbl, 0) for lbl in labels)
+            score = sum(label_scores.get(lbl, 0) for lbl in product["labels"])
             if score <= 0:
                 continue
-            beneficial = [lbl for lbl in labels if ls.get(lbl, 0) > 0]
-            match_pct = min(100, max(10, int(score / max_positive * 100)))
-            scored.append({
-                "brand":      product["brand"],
-                "name":       product["name"],
-                "type":       product["type"].title(),
-                "score":      score,
-                "match_pct":  match_pct,
-                "beneficial": beneficial[:3],
-            })
+            beneficial = [lbl for lbl in product["labels"] if label_scores.get(lbl, 0) > 0]
+            scored.append({**product, "score": score, "beneficial": beneficial})
+
         scored.sort(key=lambda x: x["score"], reverse=True)
-        results[category] = scored[:6]
+        candidates = scored[: _ML_CANDIDATES]
+
+        # ── Step 2: ML re-rank using ingredient model ──────────────────────────
+        reranked = _ml_rescore(candidates, label_scores)
+
+        # ── Step 3: build final output (top 6) ───────────────────────────────
+        top = []
+        for p in reranked[:6]:
+            combined = p["score"] + max(0, p["ml_score"])
+            match_pct = min(100, max(10, int(combined / (max_positive * 2) * 100)))
+            top.append({
+                "brand":      p["brand"],
+                "name":       p["name"],
+                "type":       p["type"].title(),
+                "match_pct":  match_pct,
+                "beneficial": p["beneficial"][:3],
+            })
+        results[category] = top
 
     return jsonify({
         "skin_type":       skin_type,
@@ -214,5 +280,5 @@ def recommend():
 
 
 if __name__ == "__main__":
-    print("Service is running on http://127.0.0.1:5000")
-    app.run(host="0.0.0.0", port=5000)
+    print("Service is running on http://0.0.0.0:5000")
+    app.run(host="0.0.0.0", port=5000, debug=False)
