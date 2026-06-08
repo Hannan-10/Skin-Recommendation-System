@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
-import { saveScanResult } from '../firebase/user';
+import { saveScanResult, saveScanToHistory } from '../firebase/user';
 import {
   Image,
   StyleSheet,
@@ -24,6 +24,8 @@ export default function SkinResult() {
   const API_BASE = "http://172.20.10.2:5000";
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const spinAnim = useRef(new Animated.Value(0));
   const timerRef = useRef(null);
   const startRef = useRef(0);
@@ -136,12 +138,25 @@ export default function SkinResult() {
     }
   };
 
-  // Persist scan results to Firebase whenever they become available
+  // Keep lastScan updated so recs screen always has fresh data
   useEffect(() => {
     if (skinType && conditions.length > 0) {
       saveScanResult({ skinType, conditions }).catch(() => {});
+      setSaved(false);
     }
   }, [skinType]);
+
+  const handleSaveResult = async () => {
+    if (saved || saving) return;
+    setSaving(true);
+    try {
+      await saveScanToHistory({ skinType, conditions });
+      setSaved(true);
+    } catch {
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const pickFromCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -285,6 +300,23 @@ export default function SkinResult() {
             >
               <Ionicons name="sparkles" size={18} color="#E75480" style={{ marginRight: 8 }} />
               <Text style={styles.recsButtonText}>Get Product Recommendations</Text>
+            </TouchableOpacity>
+
+            {/* Save Result */}
+            <TouchableOpacity
+              style={[styles.saveButton, saved && styles.saveButtonDone]}
+              onPress={handleSaveResult}
+              disabled={saved || saving}
+            >
+              <Ionicons
+                name={saved ? 'bookmark' : 'bookmark-outline'}
+                size={18}
+                color={saved ? '#fff' : '#E75480'}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={[styles.saveButtonText, saved && styles.saveButtonTextDone]}>
+                {saving ? 'Saving…' : saved ? 'Result Saved' : 'Save Result'}
+              </Text>
             </TouchableOpacity>
 
             {/* Secondary buttons side by side */}
@@ -477,6 +509,30 @@ const styles = StyleSheet.create({
     color: '#E75480',
     fontSize: 15,
     fontFamily: 'Nunito-Bold',
+  },
+  saveButton: {
+    width: '100%',
+    paddingVertical: 15,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#E75480',
+    backgroundColor: 'transparent',
+    marginBottom: 14,
+  },
+  saveButtonDone: {
+    backgroundColor: '#E75480',
+    borderColor: '#E75480',
+  },
+  saveButtonText: {
+    color: '#E75480',
+    fontSize: 15,
+    fontFamily: 'Nunito-Bold',
+  },
+  saveButtonTextDone: {
+    color: '#fff',
   },
   secondaryRow: {
     flexDirection: 'row',

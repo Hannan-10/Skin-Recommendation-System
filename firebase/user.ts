@@ -1,6 +1,6 @@
 import { auth, db } from './index'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, updateEmail, signOut } from 'firebase/auth'
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore'
 
 export async function registerUser(params: { name: string; email: string; password: string; age: number; gender: string }) {
   const { name, email, password, age, gender } = params
@@ -126,5 +126,44 @@ export async function getLastScanResult(): Promise<{
     return snap.data().lastScan || null
   } catch {
     return null
+  }
+}
+
+export async function saveScanToHistory(params: {
+  skinType: string
+  conditions: { label: string; confidence: number }[]
+}) {
+  if (!auth || !db) return
+  const user = auth.currentUser
+  if (!user) return
+  try {
+    const col = collection(db, 'users', user.uid, 'scanHistory')
+    await addDoc(col, {
+      skinType: params.skinType,
+      conditions: params.conditions,
+      scannedAt: serverTimestamp(),
+    })
+  } catch (e) {
+    console.warn('saveScanToHistory failed', e)
+  }
+}
+
+export async function getScanHistory(): Promise<{
+  id: string
+  skinType: string
+  conditions: { label: string; confidence: number }[]
+  scannedAt: any
+}[]> {
+  if (!auth || !db) return []
+  const user = auth.currentUser
+  if (!user) return []
+  try {
+    const col = collection(db, 'users', user.uid, 'scanHistory')
+    const q = query(col, orderBy('scannedAt', 'desc'))
+    const snap = await getDocs(q)
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as any))
+  } catch (e) {
+    console.warn('getScanHistory failed', e)
+    return []
   }
 }
