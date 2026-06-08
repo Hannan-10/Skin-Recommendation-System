@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
-import { saveScanResult } from '../firebase/user';
+import { saveScanResult, saveScanToHistory } from '../firebase/user';
 import {
   Image,
   StyleSheet,
@@ -140,6 +140,7 @@ export default function SkinResult() {
   useEffect(() => {
     if (skinType && conditions.length > 0) {
       saveScanResult({ skinType, conditions }).catch(() => {});
+      saveScanToHistory({ skinType, conditions }).catch(() => {});
     }
   }, [skinType]);
 
