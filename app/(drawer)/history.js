@@ -5,6 +5,8 @@ import PieChart from '../components/PieChart'
 import { useRouter } from 'expo-router'
 import StackedBar from '../components/StackedBar'
 import { getScanHistory } from '../../firebase/user'
+import { auth } from '../../firebase/index'
+import { onAuthStateChanged } from 'firebase/auth'
 
 const CONDITION_COLORS = {
   Acne:       '#E75480',
@@ -49,10 +51,17 @@ export default function History() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getScanHistory()
-      .then(data => setHistory(data.map(transformEntry)))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        getScanHistory()
+          .then(data => setHistory(data.map(transformEntry)))
+          .catch(() => {})
+          .finally(() => setLoading(false))
+      } else {
+        setLoading(false)
+      }
+    })
+    return unsubscribe
   }, [])
 
   return (
