@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +19,15 @@ import { getCurrentUserProfile, getLastScanResult } from '../../../firebase/user
 const { width: SCREEN_W } = Dimensions.get('window');
 const API_BASE = 'http://172.20.10.2:5000';
 const CONFIDENCE_THRESHOLD = 0.35;
+
+// ── Category product images ───────────────────────────────────────────────────
+const CATEGORY_IMAGES = {
+  Cleanser:    require('../../../assets/images/c1.jpg'),
+  Serum:       require('../../../assets/images/serum1.jpg'),
+  Moisturizer: require('../../../assets/images/moist2.jpg'),
+  Sunscreen:   require('../../../assets/images/s1.webp'),
+  Treatment:   require('../../../assets/images/serm1.jpg'),
+};
 
 // ── Category visual config ────────────────────────────────────────────────────
 const CATEGORY_CFG = {
@@ -83,9 +93,13 @@ function ProductCard({ product, categoryKey, index }) {
     ]}>
       {/* Gradient top section */}
       <LinearGradient colors={cfg.colors} style={styles.cardTop}>
-        {/* Brand initial circle */}
-        <View style={styles.brandCircle}>
-          <Text style={styles.brandInitial}>{initial}</Text>
+        {/* Product image */}
+        <View style={styles.productImageWrap}>
+          <Image
+            source={CATEGORY_IMAGES[categoryKey] || CATEGORY_IMAGES.Serum}
+            style={styles.productImage}
+            resizeMode="contain"
+          />
         </View>
 
         {/* Category micro-badge */}
@@ -652,12 +666,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     flexDirection: 'row', alignItems: 'flex-start',
   },
-  brandCircle: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+  productImageWrap: {
+    width: 64, height: 64, borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
   },
-  brandInitial: { fontSize: 20, fontFamily: 'Nunito-ExtraBold', color: '#fff' },
+  productImage: { width: 56, height: 56 },
   catBadge: {
     position: 'absolute', bottom: 10, left: 14,
     backgroundColor: 'rgba(255,255,255,0.25)',

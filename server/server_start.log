@@ -17,3 +17,32 @@ WARNING: This is a development server. Do not use it in a production deployment.
  * Running on http://127.0.0.1:5000
  * Running on http://192.168.10.8:5000
 Press CTRL+C to quit
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1780953106.436853   17172 service.cc:146] XLA service 0x16158e9b7d0 initialized for platform Host (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1780953106.438904   17172 service.cc:154]   StreamExecutor device (0): Host, Default Version
+172.20.10.1 - - [09/Jun/2026 02:11:46] "POST /predict HTTP/1.1" 200 -
+2026-06-09 02:11:46.599701: I tensorflow/compiler/mlir/tensorflow/utils/dump_mlir_util.cc:268] disabling MLIR crash reproducer, set env var `MLIR_CRASH_REPRODUCER_DIRECTORY` to enable.
+I0000 00:00:1780953108.073893   17172 device_compiler.h:188] Compiled cluster using XLA!  This line is logged at most once for the lifetime of the process.
+172.20.10.1 - - [09/Jun/2026 02:11:48] "POST /detect HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:11:57] "POST /recommend HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:12:47] "POST /predict HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:12:47] "POST /detect HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:12:55] "POST /recommend HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:14:57] "POST /predict HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:14:58] "POST /detect HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:15:06] "POST /recommend HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:20:53] "POST /predict HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:20:53] "POST /detect HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:21:06] "POST /predict HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:21:07] "POST /detect HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:21:31] "POST /predict HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:21:32] "POST /detect HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:21:59] "POST /predict HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:21:59] "POST /detect HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:22:07] "POST /recommend HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:22:39] "POST /predict HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:22:39] "POST /detect HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:22:44] "POST /recommend HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:42:31] "POST /predict HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:42:31] "POST /detect HTTP/1.1" 200 -
+172.20.10.1 - - [09/Jun/2026 02:42:36] "POST /recommend HTTP/1.1" 200 -
