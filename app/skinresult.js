@@ -2,6 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
 import { saveScanResult, saveScanToHistory } from '../firebase/user';
+import { API_BASE } from './config';
 import {
   Image,
   StyleSheet,
@@ -21,7 +22,6 @@ export default function SkinResult() {
   const [skinType, setSkinType] = useState(null);
   const [confidence, setConfidence] = useState(null);
   const [conditions, setConditions] = useState([]);
-  const API_BASE = "http://172.20.10.2:5000";
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [saved, setSaved] = useState(false);

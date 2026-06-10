@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { API_BASE } from '../../config';
 import {
   View,
   Text,
@@ -17,7 +18,6 @@ import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { getCurrentUserProfile, getLastScanResult } from '../../../firebase/user';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const API_BASE = 'http://172.20.10.2:5000';
 const CONFIDENCE_THRESHOLD = 0.35;
 
 // ── Category product images ───────────────────────────────────────────────────
