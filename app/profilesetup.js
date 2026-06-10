@@ -1,9 +1,24 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView, Image } from 'react-native';
+import { useEffect, useState, useRef } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView, Image, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import StatusModal from './components/StatusModal';
 import { getCurrentUserProfile, updateUserProfile } from '../firebase/user';
+
+function Skeleton({ width, height, borderRadius = 10, style }) {
+  const opacity = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  return (
+    <Animated.View style={[{ width, height, borderRadius, backgroundColor: '#F2C4D4', opacity }, style]} />
+  );
+}
 
 export default function ProfileSetup() {
   const router = useRouter();
@@ -11,6 +26,7 @@ export default function ProfileSetup() {
   const [email, setEmail] = useState('');
   const [gender, setGender] = useState(null);
   const [age, setAge] = useState('');
+  const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState('error');
   const [modalTitle, setModalTitle] = useState('');
@@ -19,12 +35,16 @@ export default function ProfileSetup() {
 
   useEffect(() => {
     (async () => {
-      const p = await getCurrentUserProfile();
-      if (p) {
-        setName(p.name || '');
-        setEmail(p.email || '');
-        setAge(String(p.age || ''));
-        setGender(p.gender || null);
+      try {
+        const p = await getCurrentUserProfile();
+        if (p) {
+          setName(p.name || '');
+          setEmail(p.email || '');
+          setAge(String(p.age || ''));
+          setGender(p.gender || null);
+        }
+      } finally {
+        setLoading(false);
       }
     })();
   }, []);
@@ -90,61 +110,82 @@ export default function ProfileSetup() {
         <Text style={styles.subtitleText}>A few details to personalize your experience</Text>
       </View>
 
-      {/* NAME */}
-      <Text style={styles.label}>Full Name</Text>
-      <TextInput 
-        placeholder="e.g., John Doe" 
-        style={styles.input} 
-        placeholderTextColor="#aaa"
-        value={name}
-        onChangeText={setName}
-      />
+      {loading ? (
+        <>
+          {/* Input skeletons */}
+          {[1, 2, 3].map((i) => (
+            <View key={i}>
+              <Skeleton width={80} height={13} borderRadius={6} style={{ marginBottom: 10 }} />
+              <Skeleton width="100%" height={52} borderRadius={16} style={{ marginBottom: 18 }} />
+            </View>
+          ))}
 
-      {/* EMAIL */}
-      <Text style={styles.label}>Email</Text>
-      <TextInput 
-        placeholder="e.g., john@example.com" 
-        style={styles.input} 
-        placeholderTextColor="#aaa"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
+          {/* Gender skeleton */}
+          <Skeleton width={100} height={13} borderRadius={6} style={{ marginBottom: 12 }} />
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+            {[70, 80, 65].map((w, i) => (
+              <Skeleton key={i} width={w} height={44} borderRadius={25} />
+            ))}
+          </View>
 
-      {/* AGE */}
-      <Text style={styles.label}>Age</Text>
-      <TextInput 
-        placeholder="e.g., 25" 
-        style={styles.input} 
-        keyboardType="numeric" 
-        placeholderTextColor="#aaa"
-        value={age}
-        onChangeText={setAge}
-      />
+          {/* Button skeleton */}
+          <Skeleton width="100%" height={56} borderRadius={10} />
+        </>
+      ) : (
+        <>
+          {/* NAME */}
+          <Text style={styles.label}>Full Name</Text>
+          <TextInput
+            placeholder="e.g., John Doe"
+            style={styles.input}
+            placeholderTextColor="#aaa"
+            value={name}
+            onChangeText={setName}
+          />
 
-      {/* GENDER */}
-      <Text style={styles.label}>Gender (Optional)</Text>
-      <View style={styles.genderContainer}>
-        {['Male', 'Female', 'Other'].map((g) => (
-          <TouchableOpacity
-            key={g}
-            style={[styles.genderOption, gender === g && styles.genderSelected]}
-            onPress={() => setGender(g)}
-          >
-            <Text style={[styles.genderText, gender === g && styles.genderTextSelected]}>{g}</Text>
+          {/* EMAIL */}
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            placeholder="e.g., john@example.com"
+            style={styles.input}
+            placeholderTextColor="#aaa"
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+          />
+
+          {/* AGE */}
+          <Text style={styles.label}>Age</Text>
+          <TextInput
+            placeholder="e.g., 25"
+            style={styles.input}
+            keyboardType="numeric"
+            placeholderTextColor="#aaa"
+            value={age}
+            onChangeText={setAge}
+          />
+
+          {/* GENDER */}
+          <Text style={styles.label}>Gender (Optional)</Text>
+          <View style={styles.genderContainer}>
+            {['Male', 'Female', 'Other'].map((g) => (
+              <TouchableOpacity
+                key={g}
+                style={[styles.genderOption, gender === g && styles.genderSelected]}
+                onPress={() => setGender(g)}
+              >
+                <Text style={[styles.genderText, gender === g && styles.genderTextSelected]}>{g}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* CONTINUE BUTTON */}
+          <TouchableOpacity style={styles.button} onPress={handleContinue}>
+            <Text style={styles.buttonText}>Continue</Text>
+            <Ionicons name="arrow-forward-outline" size={22} color="#fff" style={{ marginLeft: 8 }} />
           </TouchableOpacity>
-        ))}
-      </View>
-
-
-      {/* CONTINUE BUTTON */}
-      <TouchableOpacity 
-        style={styles.button} 
-        onPress={handleContinue} 
-      >
-        <Text style={styles.buttonText}>Continue</Text>
-        <Ionicons name="arrow-forward-outline" size={22} color="#fff" style={{ marginLeft: 8 }} />
-      </TouchableOpacity>
+        </>
+      )}
       <StatusModal
         visible={modalVisible}
         type={modalType}
