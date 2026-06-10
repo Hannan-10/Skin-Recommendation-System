@@ -100,11 +100,16 @@ export default function ProfileSetup() {
   };
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      {/* --- BACK BUTTON --- */}
+      <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/(drawer)/(tabs)/profile')}>
+        <Ionicons name="arrow-back" size={22} color="#E75480" />
+      </TouchableOpacity>
+
       {/* --- LOGO --- */}
       <View style={styles.logoContainer}>
-        <Image 
-          source={require('../assets/images/logo3.png')} 
-          style={styles.logo} 
+        <Image
+          source={require('../assets/images/logo3.png')}
+          style={styles.logo}
         />
         <Text style={styles.welcomeText}>Setup Your Profile</Text>
         <Text style={styles.subtitleText}>A few details to personalize your experience</Text>
@@ -206,10 +211,17 @@ export default function ProfileSetup() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    padding: 20, 
-    backgroundColor: '#FFF9F6', 
-    flexGrow: 1 
+  container: {
+    padding: 20,
+    backgroundColor: '#FFF9F6',
+    flexGrow: 1,
+  },
+  backBtn: {
+    alignSelf: 'flex-start',
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#FFE3ED',
+    marginBottom: 4,
   },
 
   // LOGO
