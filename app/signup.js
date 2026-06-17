@@ -203,7 +203,7 @@ export default function SignupScreen() {
         onPrimary={() => {
           if (modalType === 'success') {
             setModalVisible(false);
-            router.replace('/home');
+            router.replace('/allergyprofile');
           } else {
             setModalVisible(false);
           }

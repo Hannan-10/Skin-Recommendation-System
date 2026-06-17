@@ -15,7 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
-import { getCurrentUserProfile, getLastScanResult } from '../../../firebase/user';
+import { getCurrentUserProfile, getLastScanResult, getAllergyProfile } from '../../../firebase/user';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CONFIDENCE_THRESHOLD = 0.35;
@@ -203,9 +203,10 @@ export default function Recs() {
     setLoading(true);
     setError(null);
     try {
-      const [prof, lastScan] = await Promise.all([
+      const [prof, lastScan, allergyProfile] = await Promise.all([
         getCurrentUserProfile().catch(() => null),
         getLastScanResult().catch(() => null),
+        getAllergyProfile().catch(() => null),
       ]);
       setProfile(prof);
 
@@ -234,10 +235,12 @@ export default function Recs() {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          skin_type:  skinType,
-          conditions: filteredConds,
-          age:        prof?.age   || 25,
-          gender:     prof?.gender || '',
+          skin_type:   skinType,
+          conditions:  filteredConds,
+          age:         prof?.age   || 25,
+          gender:      prof?.gender || '',
+          allergens:   allergyProfile?.allergens    || [],
+          sensitivities: allergyProfile?.sensitivities || [],
         }),
       });
 

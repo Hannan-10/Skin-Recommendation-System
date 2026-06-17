@@ -90,6 +90,47 @@ export async function signOutUser() {
   return true
 }
 
+export async function saveAllergyProfile(params: {
+  allergens: string[]
+  sensitivities: string[]
+  customNotes: string
+}) {
+  if (!auth || !db) return
+  const user = auth.currentUser
+  if (!user) return
+  const ref = doc(db, 'users', user.uid)
+  try {
+    await updateDoc(ref, {
+      allergyProfile: {
+        allergens: params.allergens,
+        sensitivities: params.sensitivities,
+        customNotes: params.customNotes,
+        updatedAt: serverTimestamp(),
+      },
+    })
+  } catch (e) {
+    console.warn('saveAllergyProfile failed', e)
+  }
+}
+
+export async function getAllergyProfile(): Promise<{
+  allergens: string[]
+  sensitivities: string[]
+  customNotes: string
+} | null> {
+  if (!auth || !db) return null
+  const user = auth.currentUser
+  if (!user) return null
+  const ref = doc(db, 'users', user.uid)
+  try {
+    const snap = await getDoc(ref)
+    if (!snap.exists()) return null
+    return snap.data().allergyProfile || null
+  } catch {
+    return null
+  }
+}
+
 export async function saveScanResult(params: {
   skinType: string
   conditions: { label: string; confidence: number }[]
