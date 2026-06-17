@@ -61,7 +61,8 @@ const BENEFIT_TEXT   = ['#00916E', '#2D71C8', '#C47A15', '#C0315E', '#6D4DF2'];
 // ─────────────────────────────────────────────────────────────────────────────
 // ProductCard
 // ─────────────────────────────────────────────────────────────────────────────
-function ProductCard({ product, categoryKey, index }) {
+function ProductCard({ product, categoryKey, index, productIndex }) {
+  const router = useRouter();
   const cfg = CATEGORY_CFG[categoryKey] || CATEGORY_CFG.Serum;
   const initial = (product.brand || '?').charAt(0).toUpperCase();
   const pct = product.match_pct || 0;
@@ -133,6 +134,22 @@ function ProductCard({ product, categoryKey, index }) {
             </View>
           ))}
         </View>
+
+        {/* Start Routine button */}
+        <TouchableOpacity
+          style={styles.routineBtn}
+          onPress={() => router.push({
+            pathname: '/routinesetup',
+            params: {
+              productIndex,
+              product: JSON.stringify({ ...product, _category: categoryKey }),
+            },
+          })}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="play-circle-outline" size={13} color="#fff" style={{ marginRight: 4 }} />
+          <Text style={styles.routineBtnText}>Start Routine</Text>
+        </TouchableOpacity>
       </View>
     </Animated.View>
   );
@@ -463,7 +480,7 @@ export default function Recs() {
           </View>
           <View style={styles.topPicksList}>
             {topProducts.map((p, i) => (
-              <ProductCard key={i} product={p} categoryKey={p._category} index={i} />
+              <ProductCard key={i} product={p} categoryKey={p._category} index={i} productIndex={i} />
             ))}
           </View>
         </View>
@@ -723,6 +740,12 @@ const styles = StyleSheet.create({
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   benefitTag: { paddingVertical: 3, paddingHorizontal: 8, borderRadius: 8 },
   benefitTagText: { fontSize: 10, fontFamily: 'Nunito-SemiBold' },
+  routineBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#E75480', borderRadius: 10,
+    paddingVertical: 7, marginTop: 8,
+  },
+  routineBtnText: { fontSize: 11, fontFamily: 'Nunito-Bold', color: '#fff' },
 
   // ── Disclaimer ─────────────────────────────────────────────────────────────
   disclaimer: {
