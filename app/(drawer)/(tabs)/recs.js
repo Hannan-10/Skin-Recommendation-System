@@ -338,7 +338,12 @@ export default function Recs() {
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, 5);
 
-  const totalMatches = Object.values(recommendations || {}).reduce((s, arr) => s + arr.length, 0);
+  const topProducts = Object.entries(recommendations || {})
+    .flatMap(([cat, prods]) => prods.map(p => ({ ...p, _category: cat })))
+    .sort((a, b) => (b.match_pct || 0) - (a.match_pct || 0))
+    .slice(0, 4);
+
+  const totalMatches = topProducts.length;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -440,14 +445,25 @@ export default function Recs() {
           </Text>
         </LinearGradient>
 
-        {/* ── CATEGORY SECTIONS ── */}
-        {Object.keys(CATEGORY_CFG).map(cat => (
-          <CategorySection
-            key={cat}
-            categoryKey={cat}
-            products={recommendations?.[cat] || []}
-          />
-        ))}
+        {/* ── TOP PICKS ── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <LinearGradient colors={['#E75480', '#FF6B9D']} style={styles.sectionIconBg}>
+              <Ionicons name="star" size={16} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.sectionTitle}>Top Picks For You</Text>
+            <View style={[styles.countPill, { backgroundColor: '#FFEBF3' }]}>
+              <Text style={[styles.countText, { color: '#C0315E' }]}>
+                {topProducts.length} products
+              </Text>
+            </View>
+          </View>
+          <View style={styles.topPicksList}>
+            {topProducts.map((p, i) => (
+              <ProductCard key={i} product={p} categoryKey={p._category} index={i} />
+            ))}
+          </View>
+        </View>
 
         {/* ── DISCLAIMER ── */}
         <View style={styles.disclaimer}>
@@ -638,6 +654,10 @@ const styles = StyleSheet.create({
   countText: { fontSize: 12, fontFamily: 'Nunito-Bold' },
 
   cardsScroll: { paddingHorizontal: 16, paddingBottom: 4 },
+  topPicksList: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    paddingHorizontal: 12, gap: 14,
+  },
 
   emptySection: {
     alignItems: 'center', paddingVertical: 24,
@@ -650,8 +670,8 @@ const styles = StyleSheet.create({
 
   // ── Product card ───────────────────────────────────────────────────────────
   card: {
-    width: 190,
-    marginRight: 14,
+    width: (SCREEN_W - 52) / 2,
+    marginRight: 0,
     borderRadius: 20,
     backgroundColor: '#fff',
     overflow: 'hidden',
