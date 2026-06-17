@@ -3,8 +3,9 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, SafeAreaView, ScrollView, Alert, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import { getCurrentUserProfile, signOutUser } from '../../../firebase/user';
+import { getCurrentUserProfile, signOutUser, getAllergyProfile } from '../../../firebase/user';
 import ScreenHeader from '../../components/ScreenHeader';
 
 function Skeleton({ width, height, borderRadius = 10, style }) {
@@ -26,6 +27,7 @@ export default function Profile() {
   const router = useRouter();
   const [image, setImage] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [allergyProfile, setAllergyProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Profile Image Selection Logic
@@ -56,8 +58,12 @@ export default function Profile() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await getCurrentUserProfile();
+        const [data, allergy] = await Promise.all([
+          getCurrentUserProfile().catch(() => null),
+          getAllergyProfile().catch(() => null),
+        ]);
         setProfile(data);
+        setAllergyProfile(allergy);
       } finally {
         setLoading(false);
       }
@@ -86,6 +92,9 @@ export default function Profile() {
                 </View>
               ))}
             </View>
+
+            {/* Allergy card skeleton */}
+            <Skeleton width="90%" height={90} borderRadius={16} style={{ marginTop: 4 }} />
 
             {/* Button skeletons */}
             <Skeleton width="85%" height={50} borderRadius={10} style={{ marginTop: 10 }} />
@@ -141,6 +150,72 @@ export default function Profile() {
               </View>
             </View>
 
+              {/* ── Allergy & Sensitivity Card ── */}
+              <View style={styles.allergyCard}>
+                <LinearGradient colors={['#E75480', '#FF6B9D']} style={styles.allergyCardHeader}>
+                  <Ionicons name="shield-checkmark" size={18} color="#fff" />
+                  <Text style={styles.allergyCardTitle}>Allergy & Sensitivity Profile</Text>
+                  <TouchableOpacity
+                    style={styles.allergyEditBtn}
+                    onPress={() => router.push('/allergyprofile?from=profile')}
+                  >
+                    <Ionicons name="create-outline" size={16} color="#fff" />
+                  </TouchableOpacity>
+                </LinearGradient>
+
+                {allergyProfile ? (
+                  <View style={styles.allergyCardBody}>
+                    {allergyProfile.allergens?.length > 0 && (
+                      <View style={styles.allergySection}>
+                        <Text style={styles.allergySectionLabel}>Ingredient Allergies</Text>
+                        <View style={styles.allergyChipRow}>
+                          {allergyProfile.allergens.map(a => (
+                            <View key={a} style={styles.allergyChip}>
+                              <Ionicons name="close-circle" size={12} color="#E75480" style={{ marginRight: 4 }} />
+                              <Text style={styles.allergyChipText}>{a.replace(/_/g, ' ')}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+
+                    {allergyProfile.sensitivities?.length > 0 && (
+                      <View style={styles.allergySection}>
+                        <Text style={styles.allergySectionLabel}>Skin Conditions</Text>
+                        <View style={styles.allergyChipRow}>
+                          {allergyProfile.sensitivities.map(s => (
+                            <View key={s} style={[styles.allergyChip, styles.allergyChipSensitivity]}>
+                              <Ionicons name="alert-circle" size={12} color="#6D4DF2" style={{ marginRight: 4 }} />
+                              <Text style={[styles.allergyChipText, { color: '#6D4DF2' }]}>{s}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+
+                    {allergyProfile.customNotes ? (
+                      <View style={styles.allergySection}>
+                        <Text style={styles.allergySectionLabel}>Other Notes</Text>
+                        <Text style={styles.allergyNotes}>{allergyProfile.customNotes}</Text>
+                      </View>
+                    ) : null}
+
+                    {!allergyProfile.allergens?.length && !allergyProfile.sensitivities?.length && !allergyProfile.customNotes && (
+                      <Text style={styles.allergyEmpty}>No allergies or sensitivities recorded.</Text>
+                    )}
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.allergySetupPrompt}
+                    onPress={() => router.push('/allergyprofile?from=profile')}
+                  >
+                    <Ionicons name="add-circle-outline" size={20} color="#E75480" />
+                    <Text style={styles.allergySetupText}>Set up your allergy profile</Text>
+                    <Ionicons name="chevron-forward" size={16} color="#E75480" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
             <TouchableOpacity style={styles.editBtn} onPress={() => router.push('/profilesetup')}>
               <Ionicons name="create-outline" size={22} color="#fff" />
               <Text style={styles.editBtnText}>Edit Profile</Text>
@@ -175,5 +250,38 @@ const styles = StyleSheet.create({
   editBtn: { flexDirection: 'row', backgroundColor: '#E75480', marginTop: 10, padding: 15, borderRadius: 10, width: '85%', justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#E75480', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   editBtnText: { color: '#fff', marginLeft: 8, fontFamily: 'Nunito-Bold' },
   signOutBtn: { flexDirection: 'row', backgroundColor: '#e21072', marginTop: 20, padding: 15, borderRadius: 10, width: '85%', justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#e21072', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
-  signOutText: { color: '#fff', marginLeft: 10, fontFamily: 'Nunito-Bold' }
+  signOutText: { color: '#fff', marginLeft: 10, fontFamily: 'Nunito-Bold' },
+
+  allergyCard: {
+    width: '90%', backgroundColor: '#fff', borderRadius: 16, marginBottom: 12,
+    elevation: 2, shadowColor: '#E75480', shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+    overflow: 'hidden',
+  },
+  allergyCardHeader: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 8,
+  },
+  allergyCardTitle: { flex: 1, fontSize: 14, fontFamily: 'Nunito-Bold', color: '#fff' },
+  allergyEditBtn: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  allergyCardBody: { padding: 14, gap: 12 },
+  allergySection: { gap: 6 },
+  allergySectionLabel: { fontSize: 12, fontFamily: 'Nunito-Bold', color: '#888', textTransform: 'uppercase', letterSpacing: 0.5 },
+  allergyChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  allergyChip: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 4, paddingHorizontal: 10,
+    borderRadius: 14, backgroundColor: '#FFE3ED',
+  },
+  allergyChipSensitivity: { backgroundColor: '#F3EFFE' },
+  allergyChipText: { fontSize: 12, fontFamily: 'Nunito-SemiBold', color: '#E75480' },
+  allergyNotes: { fontSize: 13, fontFamily: 'Nunito-Regular', color: '#555', lineHeight: 18 },
+  allergyEmpty: { fontSize: 13, fontFamily: 'Nunito-Regular', color: '#bbb', textAlign: 'center', paddingVertical: 8 },
+  allergySetupPrompt: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 16,
+  },
+  allergySetupText: { flex: 1, fontSize: 14, fontFamily: 'Nunito-SemiBold', color: '#E75480' },
 });

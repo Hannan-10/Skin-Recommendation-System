@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, SafeAreaView, KeyboardAvoidingView, Platform,
+  TextInput, SafeAreaView, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { saveAllergyProfile } from '../firebase/user';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { saveAllergyProfile, getAllergyProfile } from '../firebase/user';
 
 const INGREDIENT_ALLERGENS = [
   { id: 'fragrance',       label: 'Fragrance / Parfum' },
@@ -30,10 +30,30 @@ const SKIN_SENSITIVITIES = [
 
 export default function AllergyProfile() {
   const router = useRouter();
+  const { from } = useLocalSearchParams();
+  const isEditMode = from === 'profile';
+
   const [selectedAllergens, setSelectedAllergens] = useState([]);
   const [selectedSensitivities, setSelectedSensitivities] = useState([]);
   const [customNotes, setCustomNotes] = useState('');
+  const [loadingData, setLoadingData] = useState(isEditMode);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isEditMode) return;
+    (async () => {
+      try {
+        const existing = await getAllergyProfile();
+        if (existing) {
+          setSelectedAllergens(existing.allergens || []);
+          setSelectedSensitivities(existing.sensitivities || []);
+          setCustomNotes(existing.customNotes || '');
+        }
+      } finally {
+        setLoadingData(false);
+      }
+    })();
+  }, []);
 
   const toggle = (list, setList, id) => {
     setList(prev =>
@@ -50,14 +70,29 @@ export default function AllergyProfile() {
         customNotes: customNotes.trim(),
       });
     } catch (e) {
-      // Non-fatal — continue to home even if save fails
+      // Non-fatal
     } finally {
       setSaving(false);
-      router.replace('/home');
+      if (isEditMode) {
+        router.back();
+      } else {
+        router.replace('/home');
+      }
     }
   };
 
-  const handleSkip = () => router.replace('/home');
+  const handleSkip = () => {
+    if (isEditMode) router.back();
+    else router.replace('/home');
+  };
+
+  if (loadingData) {
+    return (
+      <SafeAreaView style={[styles.safe, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#E75480" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -72,6 +107,11 @@ export default function AllergyProfile() {
         >
           {/* ── Header ── */}
           <LinearGradient colors={['#E75480', '#FF6B9D', '#FFB3CC']} style={styles.header}>
+            {isEditMode && (
+              <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+                <Ionicons name="arrow-back" size={22} color="#fff" />
+              </TouchableOpacity>
+            )}
             <View style={styles.headerIconWrap}>
               <Ionicons name="shield-checkmark" size={40} color="#fff" />
             </View>
@@ -176,13 +216,15 @@ export default function AllergyProfile() {
           >
             <Ionicons name="checkmark-done-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
             <Text style={styles.saveBtnText}>
-              {saving ? 'Saving…' : 'Save & Continue'}
+              {saving ? 'Saving…' : isEditMode ? 'Save Changes' : 'Save & Continue'}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
-            <Text style={styles.skipBtnText}>Skip for now</Text>
-          </TouchableOpacity>
+          {!isEditMode && (
+            <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
+              <Text style={styles.skipBtnText}>Skip for now</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -198,6 +240,17 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     paddingHorizontal: 24,
     alignItems: 'center',
+  },
+  backBtn: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerIconWrap: {
     width: 72,
