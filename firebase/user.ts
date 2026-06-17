@@ -95,8 +95,8 @@ export async function signOutUser() {
 export async function saveActiveRoutine(params: {
   productIndex: number
   product: { name: string; brand: string; type: string; category: string }
-  routineTimes: string[]   // ['08:00', '22:00']
-  baseScan: { skinType: string; conditions: { label: string; confidence: number }[] } | null
+  routineTimes: string[]
+  baseScan: { skinType: string; conditions: { label: string; confidence: number }[]; scannedAt: any } | null
 }) {
   if (!auth || !db) return
   const user = auth.currentUser
@@ -120,7 +120,7 @@ export async function getActiveRoutine(): Promise<{
   productIndex: number
   product: { name: string; brand: string; type: string; category: string }
   routineTimes: string[]
-  baseScan: { skinType: string; conditions: { label: string; confidence: number }[] } | null
+  baseScan: { skinType: string; conditions: { label: string; confidence: number }[]; scannedAt: any } | null
   startedAt: any
   lastCheckedAt: any
   noImprovementCount: number

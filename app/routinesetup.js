@@ -75,6 +75,7 @@ export default function RoutineSetup() {
         baseScan: baseScan ? {
           skinType:   baseScan.skinType,
           conditions: baseScan.conditions || [],
+          scannedAt:  baseScan.scannedAt  || null,
         } : null,
       });
     } catch (e) {

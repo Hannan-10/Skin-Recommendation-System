@@ -97,9 +97,14 @@ export default function Progress() {
     )
   }
 
-  const baseScan   = routine.baseScan
+  const baseScan    = routine.baseScan
   const currentScan = latestScan
-  const hasComparison = baseScan && currentScan
+
+  // Only compare if the latest scan was done AFTER the routine started
+  // (i.e. it's a real progress scan, not the same baseline scan)
+  const baseTs    = baseScan?.scannedAt?.seconds  ?? (routine.startedAt?.seconds ?? 0)
+  const currentTs = currentScan?.scannedAt?.seconds ?? 0
+  const hasComparison = !!(baseScan && currentScan && currentTs > baseTs)
 
   // Compute per-condition improvement
   const improvements = ALL_CONDITIONS.map(label => {

@@ -148,7 +148,7 @@ const Home = () => {
 
   const handleScanNow = () => {
     setRoutineModal(null);
-    router.push('/skinresult?mode=camera');
+    router.push('/skinresult?mode=camera&routineCheck=true');
   };
 
   const handleSkipScan = () => setRoutineModal(null);
