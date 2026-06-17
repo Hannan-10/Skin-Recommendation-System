@@ -90,6 +90,85 @@ export async function signOutUser() {
   return true
 }
 
+// ── Skin Routine ────────────────────────────────────────────────────────────
+
+export async function saveActiveRoutine(params: {
+  productIndex: number
+  product: { name: string; brand: string; type: string; category: string }
+  routineTimes: string[]
+  baseScan: { skinType: string; conditions: { label: string; confidence: number }[]; scannedAt: any } | null
+}) {
+  if (!auth || !db) return
+  const user = auth.currentUser
+  if (!user) return
+  const ref = doc(db, 'users', user.uid)
+  try {
+    await updateDoc(ref, {
+      activeRoutine: {
+        ...params,
+        startedAt: serverTimestamp(),
+        lastCheckedAt: null,
+        noImprovementCount: 0,
+      },
+    })
+  } catch (e) {
+    console.warn('saveActiveRoutine failed', e)
+  }
+}
+
+export async function getActiveRoutine(): Promise<{
+  productIndex: number
+  product: { name: string; brand: string; type: string; category: string }
+  routineTimes: string[]
+  baseScan: { skinType: string; conditions: { label: string; confidence: number }[]; scannedAt: any } | null
+  startedAt: any
+  lastCheckedAt: any
+  noImprovementCount: number
+} | null> {
+  if (!auth || !db) return null
+  const user = auth.currentUser
+  if (!user) return null
+  const ref = doc(db, 'users', user.uid)
+  try {
+    const snap = await getDoc(ref)
+    if (!snap.exists()) return null
+    return snap.data().activeRoutine || null
+  } catch {
+    return null
+  }
+}
+
+export async function markRoutineChecked(noImprovement: boolean) {
+  if (!auth || !db) return
+  const user = auth.currentUser
+  if (!user) return
+  const ref = doc(db, 'users', user.uid)
+  try {
+    const snap = await getDoc(ref)
+    const current = snap.data()?.activeRoutine || {}
+    await updateDoc(ref, {
+      'activeRoutine.lastCheckedAt': serverTimestamp(),
+      'activeRoutine.noImprovementCount': noImprovement
+        ? (current.noImprovementCount || 0) + 1
+        : 0,
+    })
+  } catch (e) {
+    console.warn('markRoutineChecked failed', e)
+  }
+}
+
+export async function clearActiveRoutine() {
+  if (!auth || !db) return
+  const user = auth.currentUser
+  if (!user) return
+  const ref = doc(db, 'users', user.uid)
+  try {
+    await updateDoc(ref, { activeRoutine: null })
+  } catch (e) {
+    console.warn('clearActiveRoutine failed', e)
+  }
+}
+
 export async function saveAllergyProfile(params: {
   allergens: string[]
   sensitivities: string[]

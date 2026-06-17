@@ -17,7 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 
 export default function SkinResult() {
   const router = useRouter();
-  const { mode } = useLocalSearchParams();
+  const { mode, routineCheck } = useLocalSearchParams();
+  const isRoutineCheck = routineCheck === 'true';
   const [imageUri, setImageUri] = useState(null);
   const [skinType, setSkinType] = useState(null);
   const [confidence, setConfidence] = useState(null);
@@ -272,35 +273,49 @@ export default function SkinResult() {
               )}
             </View>
 
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => {
-                const typeForRoutine = toRoutineType(skinType);
-                router.push({
-                  pathname: '/skinroutine',
-                  params: { skinType: typeForRoutine },
-                });
-              }}
-            >
-              <Text style={styles.primaryText}>View Suggested Routine</Text>
-            </TouchableOpacity>
+            {isRoutineCheck ? (
+              /* ── Routine progress flow ── */
+              <>
+                <View style={styles.routineCheckBanner}>
+                  <Ionicons name="checkmark-circle" size={20} color="#00C896" />
+                  <Text style={styles.routineCheckBannerText}>
+                    Progress scan saved! Compare with your baseline below.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => router.replace('/(drawer)/progress')}
+                >
+                  <Text style={styles.primaryText}>View Progress Report</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              /* ── Normal scan flow ── */
+              <>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => {
+                    const typeForRoutine = toRoutineType(skinType);
+                    router.push({ pathname: '/skinroutine', params: { skinType: typeForRoutine } });
+                  }}
+                >
+                  <Text style={styles.primaryText}>View Suggested Routine</Text>
+                </TouchableOpacity>
 
-            {/* Product Recommendations CTA */}
-            <TouchableOpacity
-              style={styles.recsButton}
-              onPress={() =>
-                router.push({
-                  pathname: '/(drawer)/(tabs)/recs',
-                  params: {
-                    skinType,
-                    conditions: JSON.stringify(conditions),
-                  },
-                })
-              }
-            >
-              <Ionicons name="sparkles" size={18} color="#E75480" style={{ marginRight: 8 }} />
-              <Text style={styles.recsButtonText}>Get Product Recommendations</Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.recsButton}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(drawer)/(tabs)/recs',
+                      params: { skinType, conditions: JSON.stringify(conditions) },
+                    })
+                  }
+                >
+                  <Ionicons name="sparkles" size={18} color="#E75480" style={{ marginRight: 8 }} />
+                  <Text style={styles.recsButtonText}>Get Product Recommendations</Text>
+                </TouchableOpacity>
+              </>
+            )}
 
             {/* Save Result */}
             <TouchableOpacity
@@ -474,6 +489,15 @@ const styles = StyleSheet.create({
     height: 8,
     backgroundColor: '#F28BA8',
     borderRadius: 4,
+  },
+  routineCheckBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(0,200,150,0.12)', borderRadius: 10,
+    padding: 12, marginBottom: 14,
+    borderWidth: 1, borderColor: 'rgba(0,200,150,0.3)',
+  },
+  routineCheckBannerText: {
+    flex: 1, color: '#00C896', fontSize: 13, fontFamily: 'Nunito-SemiBold',
   },
   primaryButton: {
     backgroundColor: '#F28BA8',

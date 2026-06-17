@@ -1,147 +1,296 @@
-// import React, { useState } from 'react';
-import React, { useState } from 'react'
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Platform, StatusBar } from 'react-native'
+import React, { useState, useEffect } from 'react'
+import {
+  View, Text, StyleSheet, SafeAreaView, ScrollView,
+  TouchableOpacity, ActivityIndicator,
+} from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import { Stack, useRouter } from 'expo-router'
-import DateTimePicker from '@react-native-community/datetimepicker'
-import StackedBar from '../components/StackedBar'
+import { getActiveRoutine, getLastScanResult, clearActiveRoutine } from '../../firebase/user'
 import PieChart from '../components/PieChart'
+
+const CONDITION_COLORS = {
+  acne:       '#E75480',
+  wrinkles:   '#FF9DB3',
+  pores:      '#FBC6D5',
+  'dark spots': '#FADDE5',
+  blackheads: '#A78BFA',
+}
+
+const ALL_CONDITIONS = ['acne', 'wrinkles', 'pores', 'dark spots', 'blackheads']
+
+function pct(val) { return Math.round((val || 0) * 100) }
+
+function buildPieData(conditions) {
+  return ALL_CONDITIONS.map(label => {
+    const match = (conditions || []).find(c => c.label === label)
+    return {
+      value: match ? pct(match.confidence) : 0,
+      color: CONDITION_COLORS[label] || '#ccc',
+      label,
+    }
+  }).filter(d => d.value > 0)
+}
+
+function daysSince(ts) {
+  if (!ts?.seconds) return 0
+  return Math.floor((Date.now() - ts.seconds * 1000) / 86400000)
+}
 
 export default function Progress() {
   const router = useRouter()
-  const [filterDays, setFilterDays] = useState('2')
-  const [date, setDate] = useState(new Date())
-  const [showCalendar, setShowCalendar] = useState(false)
 
-  const onChange = (_e, selectedDate) => {
-    if (Platform.OS === 'android') setShowCalendar(false)
-    if (selectedDate) setDate(selectedDate)
-  }
+  const [loading, setLoading] = useState(true)
+  const [routine, setRoutine] = useState(null)
+  const [latestScan, setLatestScan] = useState(null)
 
-  const toggleCalendar = () => setShowCalendar(!showCalendar)
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const [r, latest] = await Promise.all([
+          getActiveRoutine().catch(() => null),
+          getLastScanResult().catch(() => null),
+        ])
+        setRoutine(r)
+        setLatestScan(latest)
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [])
+
   const goHome = () => router.replace('/(drawer)/(tabs)/home')
 
-  const CONDITION_COLORS = {
-  Acne: '#E75480',
-  Wrinkles: '#FF9DB3',
-  Pores: '#FBC6D5',
-  Spots: '#FADDE5',
-  Blackheads: '#FFE8F0',
-};
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#E75480" />
+        </View>
+      </SafeAreaView>
+    )
+  }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      <Stack.Screen options={{ headerShown: false }} />
-
-      <View style={styles.demoBanner}>
-        <Ionicons name="information-circle" size={14} color="#fff" />
-        <Text style={styles.demoText}>PREVIEW MODE: This is a demo dashboard</Text>
-      </View>
-
-      <View style={styles.topNav}>
-        <View style={styles.leftNav}>
+  // ── No active routine ────────────────────────────────────────────────────
+  if (!routine) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.topNav}>
           <TouchableOpacity style={styles.backBtn} onPress={goHome}>
             <Ionicons name="arrow-back" size={22} color="#2D2D2D" />
           </TouchableOpacity>
-          <View>
-            <Text style={styles.welcomeText}>Progress Report</Text>
-            <Text style={styles.headerTitle}>My Skin Journey</Text>
-          </View>
+          <Text style={styles.headerTitle}>My Skin Journey</Text>
         </View>
-        <TouchableOpacity style={[styles.calendarButton, showCalendar && styles.calendarActive]} onPress={toggleCalendar}>
-          <Ionicons name={showCalendar ? 'close-outline' : 'calendar-outline'} size={26} color={showCalendar ? '#fff' : '#E75480'} />
+        <View style={styles.emptyState}>
+          <Ionicons name="bar-chart-outline" size={56} color="#ddd" />
+          <Text style={styles.emptyTitle}>No Active Routine</Text>
+          <Text style={styles.emptySub}>
+            Go to Recommendations, pick a product and tap "Start Routine" to begin tracking your skin progress.
+          </Text>
+          <TouchableOpacity style={styles.goRecsBtn} onPress={() => router.replace('/(drawer)/(tabs)/recs')}>
+            <Text style={styles.goRecsBtnText}>View Recommendations</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  const baseScan    = routine.baseScan
+  const currentScan = latestScan
+
+  // Only compare if the latest scan was done AFTER the routine started
+  // (i.e. it's a real progress scan, not the same baseline scan)
+  const baseTs    = baseScan?.scannedAt?.seconds  ?? (routine.startedAt?.seconds ?? 0)
+  const currentTs = currentScan?.scannedAt?.seconds ?? 0
+  const hasComparison = !!(baseScan && currentScan && currentTs > baseTs)
+
+  // Compute per-condition improvement
+  const improvements = ALL_CONDITIONS.map(label => {
+    const base    = baseScan?.conditions?.find(c => c.label === label)
+    const current = currentScan?.conditions?.find(c => c.label === label)
+    if (!base && !current) return null
+    const basePct    = pct(base?.confidence    || 0)
+    const currentPct = pct(current?.confidence || 0)
+    const delta = basePct - currentPct // positive = improved
+    return { label, basePct, currentPct, delta }
+  }).filter(Boolean)
+
+  const improvedCount = improvements.filter(i => i.delta > 0).length
+  const overallDelta  = improvements.length
+    ? Math.round(improvements.reduce((s, i) => s + i.delta, 0) / improvements.length)
+    : 0
+  const noImprovement = routine.noImprovementCount >= 2
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {/* ── Top nav ── */}
+      <View style={styles.topNav}>
+        <TouchableOpacity style={styles.backBtn} onPress={goHome}>
+          <Ionicons name="arrow-back" size={22} color="#2D2D2D" />
         </TouchableOpacity>
+        <View>
+          <Text style={styles.welcomeText}>Progress Report</Text>
+          <Text style={styles.headerTitle}>My Skin Journey</Text>
+        </View>
       </View>
 
-      {showCalendar && (
-        <View style={styles.pickerContainer}>
-          <DateTimePicker value={date} mode="date" display={Platform.OS === 'ios' ? 'inline' : 'calendar'} onChange={onChange} themeVariant="dark" />
-          {Platform.OS === 'ios' && (
-            <TouchableOpacity style={styles.doneButton} onPress={() => setShowCalendar(false)}>
-              <Text style={styles.doneText}>Done</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.tabWrapper}>
-          <View style={styles.tabContainer}>
-            {[
-              { key: '2', label: 'After 2 Days' },
-              { key: '7', label: 'After 7 Days' },
-              { key: '14', label: 'After 14 Days' },
-            ].map((tab) => (
-              <TouchableOpacity key={tab.key} onPress={() => setFilterDays(tab.key)} style={[styles.tab, filterDays === tab.key && styles.activeTab]}>
-                <Text style={[styles.tabText, filterDays === tab.key && styles.activeTabText]}>{tab.label}</Text>
-              </TouchableOpacity>
-            ))}
+
+        {/* ── Active routine banner ── */}
+        <LinearGradient colors={['#E75480', '#FF6B9D']} style={styles.routineBanner}>
+          <View style={styles.routineBannerLeft}>
+            <Text style={styles.routineBannerLabel}>ACTIVE ROUTINE</Text>
+            <Text style={styles.routineBannerProduct} numberOfLines={1}>
+              {routine.product?.name || 'Your Product'}
+            </Text>
+            <Text style={styles.routineBannerMeta}>
+              {routine.product?.brand}
+              {routine.routineTimes?.length
+                ? '  ·  ' + routine.routineTimes.map(t => {
+                    const [h, m] = t.split(':').map(Number)
+                    return `${h % 12 || 12}:${m.toString().padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
+                  }).join(' & ')
+                : ''}
+            </Text>
           </View>
-        </View>
+          <View style={styles.daysCircle}>
+            <Text style={styles.daysNum}>{daysSince(routine.startedAt)}</Text>
+            <Text style={styles.daysLabel}>days</Text>
+          </View>
+        </LinearGradient>
 
-        <Text style={styles.dateDisplay}>Selected: {date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</Text>
+        {/* ── No improvement warning ── */}
+        {noImprovement && (
+          <View style={styles.warningCard}>
+            <Ionicons name="warning-outline" size={20} color="#E67E22" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.warningTitle}>No visible improvement detected</Text>
+              <Text style={styles.warningSub}>
+                Consider trying product #{(routine.productIndex || 0) + 2} from your recommendations.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.switchBtn}
+              onPress={async () => {
+                await clearActiveRoutine().catch(() => {})
+                router.replace('/(drawer)/(tabs)/recs')
+              }}
+            >
+              <Text style={styles.switchBtnText}>Switch</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-        {['After 2 Days Progress', 'After 7 Days Progress', 'After 14 Days Progress'].map((title, idx) => {
-          const key = idx === 0 ? '2' : idx === 1 ? '7' : '14'
-          if (filterDays !== key) return null
-          return (
-          <View key={title} style={styles.progressBlock}>
-            <Text style={styles.blockTitle}>{title}</Text>
-            <Text style={styles.blockSub}>Acne reduced from {idx === 0 ? '40%' : idx === 1 ? '40%' : '40%'} to {idx === 0 ? '33%' : idx === 1 ? '25%' : '15%'}</Text>
-            <View style={styles.piesRow}>
-              <View style={styles.pieCard}>
-                <PieChart
-                  data={[
-                    { value: 40, color: '#E75480', label: 'Acne' },
-                    { value: 20, color: '#FF9DB3', label: 'Wrinkles' },
-                    { value: 15, color: '#FBC6D5', label: 'Pores' },
-                    { value: 15, color: '#FADDE5', label: 'Spots' },
-                    { value: 10, color: '#FFE8F0', label: 'Blackheads' },
-                  ]}
-                  size={120}
-                />
-                <Text style={styles.pieLabel}>Before</Text>
+        {/* ── Comparison ── */}
+        {hasComparison ? (
+          <>
+            {/* Overall score */}
+            <View style={styles.scoreCard}>
+              <View style={styles.scoreCardLeft}>
+                <Text style={styles.scoreLabel}>Overall Skin Improvement</Text>
+                <Text style={[
+                  styles.scoreValue,
+                  { color: overallDelta > 0 ? '#00C896' : overallDelta < 0 ? '#E75480' : '#888' }
+                ]}>
+                  {overallDelta > 0 ? '+' : ''}{overallDelta}%
+                </Text>
+                <Text style={styles.scoreSub}>
+                  {improvedCount}/{improvements.length} conditions improved
+                </Text>
               </View>
-              <View style={styles.pieCard}>
-                <PieChart
-                  data={[
-                    { value: idx === 0 ? 33 : idx === 1 ? 25 : 15, color: '#E75480', label: 'Acne' },
-                    { value: 20, color: '#FF9DB3', label: 'Wrinkles' },
-                    { value: 15, color: '#FBC6D5', label: 'Pores' },
-                    { value: idx === 0 ? 12 : 10, color: '#FADDE5', label: 'Spots' },
-                    { value: idx === 0 ? 20 : (idx === 1 ? 30 : 55), color: '#FFE8F0', label: 'Blackheads' },
-                  ]}
-                  size={120}
-                />
-                <Text style={styles.pieLabel}>After</Text>
+              <Ionicons
+                name={overallDelta > 0 ? 'trending-up' : overallDelta < 0 ? 'trending-down' : 'remove-outline'}
+                size={40}
+                color={overallDelta > 0 ? '#00C896' : overallDelta < 0 ? '#E75480' : '#aaa'}
+              />
+            </View>
+
+            {/* Before / After pie charts */}
+            <View style={styles.piesBlock}>
+              <Text style={styles.blockTitle}>Skin Condition Comparison</Text>
+              <View style={styles.piesRow}>
+                <View style={styles.pieCard}>
+                  <PieChart data={buildPieData(baseScan.conditions)} size={120} />
+                  <Text style={styles.pieLabel}>Before</Text>
+                </View>
+                <Ionicons name="arrow-forward" size={24} color="#E75480" style={{ alignSelf: 'center' }} />
+                <View style={styles.pieCard}>
+                  <PieChart data={buildPieData(currentScan.conditions)} size={120} />
+                  <Text style={styles.pieLabel}>After</Text>
+                </View>
               </View>
             </View>
-            <View style={styles.legendRow}>
-              {[{ label: 'Acne', color: '#E75480' }, { label: 'Wrinkles', color: '#FF9DB3' }, { label: 'Pores', color: '#FBC6D5' }, { label: 'Spots', color: '#FADDE5' }, { label: 'Blackheads', color: '#FFE8F0' }].map((it, i) => (
-                <View key={i} style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: it.color }]} />
-                  <Text style={styles.legendText}>{it.label}</Text>
+
+            {/* Per-condition breakdown */}
+            <View style={styles.breakdownBlock}>
+              <Text style={styles.blockTitle}>Condition Breakdown</Text>
+              {improvements.map(item => (
+                <View key={item.label} style={styles.condRow}>
+                  <View style={[styles.condDot, { backgroundColor: CONDITION_COLORS[item.label] || '#ccc' }]} />
+                  <Text style={styles.condLabel}>
+                    {item.label.charAt(0).toUpperCase() + item.label.slice(1)}
+                  </Text>
+                  <View style={styles.condBarBg}>
+                    <View style={[styles.condBar, {
+                      width: `${item.basePct}%`,
+                      backgroundColor: CONDITION_COLORS[item.label] || '#ccc',
+                      opacity: 0.4,
+                    }]} />
+                    <View style={[styles.condBar, styles.condBarForeground, {
+                      width: `${item.currentPct}%`,
+                      backgroundColor: CONDITION_COLORS[item.label] || '#ccc',
+                    }]} />
+                  </View>
+                  <Text style={[
+                    styles.condDelta,
+                    { color: item.delta > 0 ? '#00C896' : item.delta < 0 ? '#E75480' : '#aaa' }
+                  ]}>
+                    {item.delta > 0 ? '↓' : item.delta < 0 ? '↑' : '–'}{Math.abs(item.delta)}%
+                  </Text>
                 </View>
               ))}
+              <View style={styles.condLegend}>
+                <View style={styles.condLegendItem}>
+                  <View style={[styles.condLegendSwatch, { opacity: 0.4, backgroundColor: '#E75480' }]} />
+                  <Text style={styles.condLegendText}>Before</Text>
+                </View>
+                <View style={styles.condLegendItem}>
+                  <View style={[styles.condLegendSwatch, { backgroundColor: '#E75480' }]} />
+                  <Text style={styles.condLegendText}>After</Text>
+                </View>
+              </View>
             </View>
+          </>
+        ) : (
+          <View style={styles.noDataCard}>
+            <Ionicons name="scan-outline" size={40} color="#ddd" />
+            <Text style={styles.noDataTitle}>Scan to see progress</Text>
+            <Text style={styles.noDataSub}>
+              After using your product, go to home and confirm usage, then scan your skin to start tracking.
+            </Text>
+            <TouchableOpacity style={styles.scanNowBtn} onPress={() => router.push('/skinresult?mode=camera')}>
+              <Ionicons name="camera-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
+              <Text style={styles.scanNowBtnText}>Scan Now</Text>
+            </TouchableOpacity>
           </View>
-        )})}
+        )}
 
-        <View style={styles.guide}>
-          <Text style={styles.guideTitle}>Condition Guide (Color Code)</Text>
-          <View style={styles.guideRow}>
-            {Object.keys(CONDITION_COLORS).map((condition, i) => (
-  <View key={i} style={styles.legendItem}>
-    <View
-      style={[
-        styles.legendDot,
-        { backgroundColor: CONDITION_COLORS[condition] },
-      ]}
-    />
-    <Text style={styles.legendText}>{condition}</Text>
-  </View>
-))}
+        {/* Legend */}
+        <View style={styles.legendBlock}>
+          <Text style={styles.legendTitle}>Condition Color Guide</Text>
+          <View style={styles.legendRow}>
+            {Object.entries(CONDITION_COLORS).map(([label, color]) => (
+              <View key={label} style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: color }]} />
+                <Text style={styles.legendText}>
+                  {label.charAt(0).toUpperCase() + label.slice(1)}
+                </Text>
+              </View>
+            ))}
           </View>
         </View>
       </ScrollView>
@@ -151,304 +300,120 @@ export default function Progress() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF9F6' },
-  demoBanner: { backgroundColor: '#E75480', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 4, gap: 5 },
-  demoText: { color: '#fff', fontSize: 10, fontFamily: 'Nunito-Bold' },
-  topNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 25, paddingTop: 20, paddingBottom: 12 },
-  leftNav: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  backBtn: { backgroundColor: '#fff', padding: 10, borderRadius: 12, shadowColor: '#E75480', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 2 },
-  welcomeText: { fontSize: 14, color: '#888', fontFamily: 'Nunito-Regular' },
-  headerTitle: { fontSize: 26, color: '#2D2D2D', fontFamily: 'Nunito-ExtraBold' },
-  calendarButton: { backgroundColor: '#fff', padding: 10, borderRadius: 15, elevation: 4 },
-  calendarActive: { backgroundColor: '#E75480' },
-  pickerContainer: { backgroundColor: '#E75480', marginHorizontal: 20, borderRadius: 20, padding: 12, elevation: 5, borderWidth: 1, borderColor: '#FFD1E1' },
-  doneButton: { alignSelf: 'center', padding: 10 },
-  doneText: { color: '#E75480', fontFamily: 'Nunito-Bold' },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
-  tabWrapper: { alignItems: 'center', marginVertical: 10 },
-  tabContainer: { flexDirection: 'row', backgroundColor: '#FFF0F3', borderRadius: 30, padding: 4, width: '100%' },
-  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 25 },
-  activeTab: { backgroundColor: '#fff', elevation: 2 },
-  tabText: { fontSize: 14, color: '#888', fontFamily: 'Nunito-SemiBold' },
-  activeTabText: { color: '#E75480', fontFamily: 'Nunito-Bold' },
-  dateDisplay: { textAlign: 'center', color: '#A0A0A0', marginBottom: 10, fontSize: 13, fontFamily: 'Nunito-Regular' },
-  progressBlock: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, elevation: 2 },
-  blockTitle: { fontSize: 16, color: '#E75480', fontFamily: 'Nunito-Bold' },
-  blockSub: { fontSize: 12, color: '#27AE60', marginTop: 2, fontFamily: 'Nunito-Regular' },
-  piesRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  pieCard: { width: '48%', backgroundColor: '#fff', borderRadius: 16, padding: 10, alignItems: 'center', elevation: 1 },
-  piePlaceholder: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#FFE3ED' },
-  pieLabel: { marginTop: 6, fontSize: 12, color: '#888', fontFamily: 'Nunito-Regular' },
-  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 },
+
+  topNav: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12,
+  },
+  backBtn: {
+    backgroundColor: '#fff', padding: 10, borderRadius: 12,
+    shadowColor: '#E75480', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 2,
+  },
+  welcomeText: { fontSize: 13, color: '#888', fontFamily: 'Nunito-Regular' },
+  headerTitle: { fontSize: 24, color: '#2D2D2D', fontFamily: 'Nunito-ExtraBold' },
+
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 40 },
+
+  // ── Empty states ──
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  emptyTitle: { fontSize: 20, fontFamily: 'Nunito-ExtraBold', color: '#333', marginTop: 16, marginBottom: 8 },
+  emptySub: { fontSize: 14, fontFamily: 'Nunito-Regular', color: '#888', textAlign: 'center', lineHeight: 20 },
+  goRecsBtn: {
+    marginTop: 24, backgroundColor: '#E75480', paddingVertical: 14, paddingHorizontal: 28,
+    borderRadius: 14, elevation: 3,
+  },
+  goRecsBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 15 },
+
+  // ── Routine banner ──
+  routineBanner: {
+    borderRadius: 18, padding: 18, flexDirection: 'row',
+    alignItems: 'center', marginBottom: 14,
+  },
+  routineBannerLeft: { flex: 1 },
+  routineBannerLabel: { fontSize: 10, fontFamily: 'Nunito-Bold', color: 'rgba(255,255,255,0.8)', letterSpacing: 1, marginBottom: 2 },
+  routineBannerProduct: { fontSize: 18, fontFamily: 'Nunito-ExtraBold', color: '#fff', marginBottom: 2 },
+  routineBannerMeta: { fontSize: 12, fontFamily: 'Nunito-Regular', color: 'rgba(255,255,255,0.85)' },
+  daysCircle: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  daysNum: { fontSize: 20, fontFamily: 'Nunito-ExtraBold', color: '#fff' },
+  daysLabel: { fontSize: 10, fontFamily: 'Nunito-Regular', color: 'rgba(255,255,255,0.85)' },
+
+  // ── Warning ──
+  warningCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FFF4E6', borderRadius: 14, padding: 14, marginBottom: 14,
+    borderLeftWidth: 4, borderLeftColor: '#E67E22',
+  },
+  warningTitle: { fontSize: 14, fontFamily: 'Nunito-Bold', color: '#E67E22' },
+  warningSub: { fontSize: 12, fontFamily: 'Nunito-Regular', color: '#888', marginTop: 2 },
+  switchBtn: {
+    backgroundColor: '#E67E22', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10,
+  },
+  switchBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 13 },
+
+  // ── Score ──
+  scoreCard: {
+    backgroundColor: '#fff', borderRadius: 18, padding: 18,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    elevation: 2, shadowColor: '#E75480', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+    marginBottom: 14,
+  },
+  scoreCardLeft: {},
+  scoreLabel: { fontSize: 13, fontFamily: 'Nunito-Regular', color: '#888' },
+  scoreValue: { fontSize: 36, fontFamily: 'Nunito-ExtraBold' },
+  scoreSub: { fontSize: 12, fontFamily: 'Nunito-Regular', color: '#aaa' },
+
+  // ── Pie charts ──
+  piesBlock: {
+    backgroundColor: '#fff', borderRadius: 18, padding: 16,
+    elevation: 2, shadowColor: '#E75480', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+    marginBottom: 14,
+  },
+  blockTitle: { fontSize: 16, fontFamily: 'Nunito-Bold', color: '#1A1A1A', marginBottom: 14 },
+  piesRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
+  pieCard: { alignItems: 'center' },
+  pieLabel: { marginTop: 8, fontSize: 13, fontFamily: 'Nunito-SemiBold', color: '#555' },
+
+  // ── Condition breakdown ──
+  breakdownBlock: {
+    backgroundColor: '#fff', borderRadius: 18, padding: 16,
+    elevation: 2, shadowColor: '#E75480', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+    marginBottom: 14,
+  },
+  condRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  condDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
+  condLabel: { width: 72, fontSize: 12, fontFamily: 'Nunito-SemiBold', color: '#555' },
+  condBarBg: { flex: 1, height: 10, backgroundColor: '#F5F5F5', borderRadius: 5, overflow: 'hidden', position: 'relative' },
+  condBar: { position: 'absolute', top: 0, left: 0, height: 10, borderRadius: 5 },
+  condBarForeground: { zIndex: 1 },
+  condDelta: { width: 40, fontSize: 12, fontFamily: 'Nunito-Bold', textAlign: 'right' },
+  condLegend: { flexDirection: 'row', gap: 16, marginTop: 6 },
+  condLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  condLegendSwatch: { width: 12, height: 12, borderRadius: 3 },
+  condLegendText: { fontSize: 11, fontFamily: 'Nunito-Regular', color: '#888' },
+
+  // ── No scan ──
+  noDataCard: {
+    backgroundColor: '#fff', borderRadius: 18, padding: 24,
+    alignItems: 'center', elevation: 2, marginBottom: 14,
+  },
+  noDataTitle: { fontSize: 18, fontFamily: 'Nunito-Bold', color: '#333', marginTop: 12, marginBottom: 6 },
+  noDataSub: { fontSize: 13, fontFamily: 'Nunito-Regular', color: '#888', textAlign: 'center', lineHeight: 19 },
+  scanNowBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#E75480', paddingVertical: 12, paddingHorizontal: 24,
+    borderRadius: 14, marginTop: 16,
+  },
+  scanNowBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 14 },
+
+  // ── Legend ──
+  legendBlock: { backgroundColor: '#FFF0F3', borderRadius: 14, padding: 14, marginBottom: 10 },
+  legendTitle: { fontSize: 13, fontFamily: 'Nunito-Bold', color: '#330033', marginBottom: 8 },
+  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   legendItem: { flexDirection: 'row', alignItems: 'center' },
-  legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
-  legendText: { fontSize: 12, color: '#888', fontFamily: 'Nunito-Regular' },
-  guide: { marginTop: 10, padding: 12, borderRadius: 14, backgroundColor: '#FFF0F3' },
-  guideTitle: { fontSize: 14, color: '#330033', fontFamily: 'Nunito-Bold' },
-  guideRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 8 },
+  legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 5 },
+  legendText: { fontSize: 12, fontFamily: 'Nunito-Regular', color: '#888' },
 })
-// import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Platform, StatusBar } from 'react-native';
-// import { Ionicons } from '@expo/vector-icons';
-// import { Stack, useRouter } from 'expo-router';
-// import DateTimePicker from '@react-native-community/datetimepicker';
-
-// export default function Progress() {
-//   const router = useRouter();
-//   const [activeTab, setActiveTab] = useState('Weekly');
-//   const [date, setDate] = useState(new Date());
-//   const [showCalendar, setShowCalendar] = useState(false);
-
-//   const onChange = (event, selectedDate) => {
-//     if (Platform.OS === 'android') {
-//       setShowCalendar(false);
-//     }
-    
-//     if (selectedDate) {
-//       setDate(selectedDate);
-//     }
-//   };
-
-//   // Toggle Function for Calendar
-//   const toggleCalendar = () => {
-//     setShowCalendar(!showCalendar);
-//   };
-
-//   return (
-//     <SafeAreaView style={styles.container}>
-//       <StatusBar barStyle="dark-content" />
-//       <Stack.Screen options={{ headerShown: false }} />
-
-//       {/* 🚩 Stylish Demo Banner */}
-//       <View style={styles.demoBanner}>
-//         <Ionicons name="information-circle" size={14} color="#fff" />
-//         <Text style={styles.demoText}>PREVIEW MODE: This is a demo dashboard</Text>
-//       </View>
-      
-//       {/* 🔝 Premium Top Navigation */}
-//       <View style={styles.topNav}>
-//         <View style={styles.leftNav}>
-//           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-//             <Ionicons name="arrow-back" size={22} color="#2D2D2D" />
-//           </TouchableOpacity>
-//           <View>
-//           <Text style={styles.welcomeText}>Progress Report</Text>
-//           <Text style={styles.headerTitle}>My Skin Journey</Text>
-//           </View>
-//         </View>
-        
-//         <TouchableOpacity 
-//           style={[styles.calendarButton, showCalendar && styles.calendarActive]} 
-//           onPress={toggleCalendar}
-//         >
-//           <Ionicons 
-//             name={showCalendar ? "close-outline" : "calendar-outline"} 
-//             size={26} 
-//             color={showCalendar ? "#fff" : "#E75480"} 
-//           />
-//         </TouchableOpacity>
-//       </View>
-
-//       {/* ✅ Premium Date Picker Section */}
-//       {showCalendar && (
-//         <View style={styles.pickerContainer}>
-//           <DateTimePicker
-//             value={date}
-//             mode="date"
-//             display={Platform.OS === 'ios' ? 'inline' : 'calendar'}
-//             onChange={onChange}
-//             themeVariant="light"
-//             textColor="#2D2D2D"
-//             accentColor="#E75480"
-//             style={styles.datePicker}
-//           />
-//           {Platform.OS === 'ios' && (
-//             <TouchableOpacity style={styles.doneButton} onPress={() => setShowCalendar(false)}>
-//               <Text style={styles.doneText}>Done</Text>
-//             </TouchableOpacity>
-//           )}
-//         </View>
-//       )}
-
-//       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-//         {/* 🗓️ Elegant Tabs */}
-//         <View style={styles.tabWrapper}>
-//           <View style={styles.tabContainer}>
-//             {['Daily', 'Weekly', 'Monthly'].map((tab) => (
-//               <TouchableOpacity 
-//                 key={tab} 
-//                 onPress={() => setActiveTab(tab)}
-//                 style={[styles.tab, activeTab === tab && styles.activeTab]}
-//               >
-//                 <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab}</Text>
-//               </TouchableOpacity>
-//             ))}
-//           </View>
-//         </View>
-
-//         <Text style={styles.dateDisplay}>
-//            Selected: {date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-//         </Text>
-
-//         {/* 🎯 Master Health Card (Glassmorphism Style) */}
-//         <View style={styles.mainCard}>
-//           <View style={styles.cardInfo}>
-//             <View style={styles.trendBadge}>
-//               <Ionicons name="trending-up" size={12} color="#4CAF50" />
-//               <Text style={styles.trendText}>+12% improve</Text>
-//             </View>
-//             <Text style={styles.cardTitle}>Skin Score</Text>
-//             <Text style={styles.cardSub}>Consistency is paying off!</Text>
-//           </View>
-          
-//           <View style={styles.scoreContainer}>
-//              <View style={styles.scoreCircle}>
-//                 <Text style={styles.scoreText}>82</Text>
-//                 <Text style={styles.scoreUnit}>%</Text>
-//              </View>
-//           </View>
-//         </View>
-
-//         {/* 📊 Placeholder for Charts */}
-//         <View style={styles.chartPlaceholder}>
-//             <Text style={styles.placeholderText}>Visual Analytics Coming Soon</Text>
-//         </View>
-
-//       </ScrollView>
-//     </SafeAreaView>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: { flex: 1, backgroundColor: '#FFF9F6' },
-  
-//   // Demo Banner
-//   demoBanner: { 
-//     backgroundColor: '#E75480', 
-//     flexDirection: 'row', 
-//     justifyContent: 'center', 
-//     alignItems: 'center', 
-//     paddingVertical: 4, 
-//     gap: 5,
-//     borderBottomLeftRadius: 10,
-//     borderBottomRightRadius: 10
-//   },
-//   demoText: { color: '#fff', fontSize: 10, fontWeight: 'bold', letterSpacing: 1, fontFamily: 'Nunito-Bold' },
-
-//   // Top Nav
-//   topNav: { 
-//     flexDirection: 'row', 
-//     justifyContent: 'space-between', 
-//     alignItems: 'center', 
-//     paddingHorizontal: 25, 
-//     paddingTop: 30, 
-//     paddingBottom: 15 
-//   },
-//   leftNav: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-//   backBtn: { 
-//     backgroundColor: '#fff', 
-//     padding: 10, 
-//     borderRadius: 12,
-//     shadowColor: '#E75480',
-//     shadowOffset: { width: 0, height: 3 },
-//     shadowOpacity: 0.08,
-//     shadowRadius: 6,
-//     elevation: 2
-//   },
-//   welcomeText: { fontSize: 14, color: '#888', fontWeight: '500', fontFamily: 'Nunito-Regular' },
-//   headerTitle: { fontSize: 26, fontWeight: 'bold', color: '#2D2D2D', fontFamily: 'Nunito-ExtraBold' },
-  
-//   calendarButton: { 
-//     backgroundColor: '#fff', 
-//     padding: 10, 
-//     borderRadius: 15,
-//     shadowColor: '#E75480',
-//     shadowOffset: { width: 0, height: 4 },
-//     shadowOpacity: 0.1,
-//     shadowRadius: 10,
-//     elevation: 4
-//   },
-//   calendarActive: { backgroundColor: '#E75480' },
-
-//   // Picker
-//   pickerContainer: { backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 20, padding: 12, elevation: 5, borderWidth: 1, borderColor: '#F0F0F0' },
-//   datePicker: { alignSelf: 'stretch' },
-//   doneButton: { alignSelf: 'center', padding: 10 },
-//   doneText: { color: '#E75480', fontWeight: 'bold', fontFamily: 'Nunito-Bold' },
-
-//   scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
-  
-//   // Tabs
-//   tabWrapper: { alignItems: 'center', marginVertical: 20 },
-//   tabContainer: { 
-//     flexDirection: 'row', 
-//     backgroundColor: '#FFF0F3', 
-//     borderRadius: 30, 
-//     padding: 4,
-//     width: '100%',
-//     shadowColor: '#E75480',
-//     shadowOffset: { width: 0, height: 3 },
-//     shadowOpacity: 0.1,
-//     shadowRadius: 6,
-//     elevation: 2
-//   },
-//   tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 25 },
-//   activeTab: { backgroundColor: '#fff', shadowColor: '#E75480', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 5, elevation: 4 },
-//   tabText: { fontSize: 14, color: '#888', fontWeight: '600', fontFamily: 'Nunito-SemiBold' },
-//   activeTabText: { color: '#E75480', fontFamily: 'Nunito-Bold' },
-
-//   dateDisplay: { textAlign: 'center', color: '#A0A0A0', marginBottom: 20, fontSize: 13, fontStyle: 'italic', fontFamily: 'Nunito-Regular' },
-
-//   // Main Card
-//   mainCard: { 
-//     backgroundColor: 'rgba(231,84,128,0.9)', 
-//     borderRadius: 30, 
-//     padding: 25, 
-//     flexDirection: 'row', 
-//     justifyContent: 'space-between', 
-//     alignItems: 'center',
-//     shadowColor: '#E75480',
-//     shadowOffset: { width: 0, height: 10 },
-//     shadowOpacity: 0.3,
-//     shadowRadius: 20,
-//     elevation: 10
-//   },
-//   trendBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
-//   trendText: { color: '#fff', fontSize: 10, fontWeight: 'bold', fontFamily: 'Nunito-Bold' },
-//   cardTitle: { color: '#fff', fontSize: 24, fontWeight: 'bold', fontFamily: 'Nunito-ExtraBold' },
-//   cardSub: { color: '#FFD1E0', fontSize: 13, marginTop: 4, fontFamily: 'Nunito-Regular' },
-  
-//   scoreCircle: { 
-//     width: 90, 
-//     height: 90, 
-//     borderRadius: 45, 
-//     backgroundColor: 'rgba(255,255,255,0.2)', 
-//     justifyContent: 'center', 
-//     alignItems: 'center',
-//     borderWidth: 2,
-//     borderColor: 'rgba(255,255,255,0.4)',
-//     shadowColor: '#fff',
-//     shadowOffset: { width: 0, height: 3 },
-//     shadowOpacity: 0.2,
-//     shadowRadius: 6,
-//   },
-//   scoreText: { fontSize: 32, fontWeight: 'bold', color: '#fff', fontFamily: 'Nunito-Bold' },
-//   scoreUnit: { fontSize: 14, color: '#fff', fontWeight: '600', fontFamily: 'Nunito-SemiBold' },
-
-//   chartPlaceholder: { 
-//     height: 200, 
-//     backgroundColor: '#fff', 
-//     borderRadius: 30, 
-//     marginTop: 25, 
-//     justifyContent: 'center', 
-//     alignItems: 'center', 
-//     borderWidth: 1, 
-//     borderColor: '#F0F0F0', 
-//     borderStyle: 'dashed',
-//     shadowColor: '#E75480',
-//     shadowOffset: { width: 0, height: 5 },
-//     shadowOpacity: 0.05,
-//     shadowRadius: 10,
-//     elevation: 3
-//   },
-//   placeholderText: { color: '#CCC', fontSize: 14, fontFamily: 'Nunito-Regular' }
-// });

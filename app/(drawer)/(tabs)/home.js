@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Dimensions,
   Image,
+  Modal,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -12,8 +13,9 @@ import {
   Pressable
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { signOutUser } from '../../../firebase/user';
+import { signOutUser, getActiveRoutine, markRoutineChecked } from '../../../firebase/user';
 
 const { width } = Dimensions.get('window');
 
@@ -24,6 +26,8 @@ const Home = () => {
   const [underConstruction, setUnderConstruction] = useState(false);
   const [sideOpen, setSideOpen] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
+  const [routineModal, setRoutineModal] = useState(null); // { product, times }
+  const [routineStep, setRoutineStep] = useState('ask'); // 'ask' | 'scan'
 
   const scrollRef = useRef(null);
   const currentIndex = useRef(0);
@@ -72,6 +76,33 @@ const Home = () => {
     router.replace(path);
   };
 
+  // Routine check on home mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const routine = await getActiveRoutine();
+        if (!routine) return;
+        const now = new Date();
+        const todayStr = now.toDateString();
+        // Already checked today?
+        if (routine.lastCheckedAt?.seconds) {
+          const lastDate = new Date(routine.lastCheckedAt.seconds * 1000);
+          if (lastDate.toDateString() === todayStr) return;
+        }
+        // Has any routine time passed today?
+        const dueTimes = (routine.routineTimes || []).filter(t => {
+          const [h, m] = t.split(':').map(Number);
+          const due = new Date(); due.setHours(h, m, 0, 0);
+          return now > due;
+        });
+        if (dueTimes.length > 0) {
+          setRoutineModal(routine);
+          setRoutineStep('ask');
+        }
+      } catch {}
+    })();
+  }, []);
+
   // Slider auto-scroll
   useEffect(() => {
     const interval = setInterval(() => {
@@ -100,8 +131,91 @@ const Home = () => {
     );
   }
 
+  const fmt12 = (t) => {
+    const [h, m] = t.split(':').map(Number);
+    return `${h % 12 || 12}:${m.toString().padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+  };
+
+  const handleRoutineYes = async () => {
+    await markRoutineChecked(false).catch(() => {});
+    setRoutineStep('scan');
+  };
+
+  const handleRoutineNo = async () => {
+    await markRoutineChecked(false).catch(() => {});
+    setRoutineModal(null);
+  };
+
+  const handleScanNow = () => {
+    setRoutineModal(null);
+    router.push('/skinresult?mode=camera&routineCheck=true');
+  };
+
+  const handleSkipScan = () => setRoutineModal(null);
+
   return (
     <SafeAreaView style={styles.mainContainer}>
+      {/* ── Routine Check Modal ── */}
+      <Modal
+        visible={!!routineModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRoutineModal(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <LinearGradient colors={['#E75480', '#FF6B9D']} style={styles.modalHeader}>
+              <Ionicons name="notifications" size={28} color="#fff" />
+              <Text style={styles.modalHeaderTitle}>Daily Routine Check</Text>
+            </LinearGradient>
+
+            <View style={styles.modalBody}>
+              {routineStep === 'ask' ? (
+                <>
+                  <Text style={styles.modalQuestion}>
+                    Did you use{'\n'}
+                    <Text style={styles.modalProductName}>
+                      {routineModal?.product?.name || 'your skincare product'}
+                    </Text>
+                    {'\n'}today?
+                  </Text>
+                  <Text style={styles.modalSub}>
+                    Scheduled at{' '}
+                    {(routineModal?.routineTimes || []).map(fmt12).join(' & ')}
+                  </Text>
+                  <View style={styles.modalBtns}>
+                    <TouchableOpacity style={styles.modalBtnYes} onPress={handleRoutineYes}>
+                      <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                      <Text style={styles.modalBtnYesText}>Yes, I used it!</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.modalBtnNo} onPress={handleRoutineNo}>
+                      <Text style={styles.modalBtnNoText}>Not yet</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={44} color="#00C896" style={{ alignSelf: 'center', marginBottom: 10 }} />
+                  <Text style={styles.modalQuestion}>Great work!</Text>
+                  <Text style={styles.modalSub}>
+                    Want to scan your skin to track progress? It only takes a moment.
+                  </Text>
+                  <View style={styles.modalBtns}>
+                    <TouchableOpacity style={styles.modalBtnYes} onPress={handleScanNow}>
+                      <Ionicons name="scan-outline" size={18} color="#fff" />
+                      <Text style={styles.modalBtnYesText}>Scan Now</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.modalBtnNo} onPress={handleSkipScan}>
+                      <Text style={styles.modalBtnNoText}>Maybe later</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
         {/* HEADER */}
@@ -250,6 +364,41 @@ const InfoItem = ({ title, desc }) => (
 );
 
 const styles = StyleSheet.create({
+  // ── Routine Modal ────────────────────────────────────────────────────────
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  modalCard: {
+    width: '100%', backgroundColor: '#fff', borderRadius: 24, overflow: 'hidden',
+    elevation: 10, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 20, paddingVertical: 18,
+  },
+  modalHeaderTitle: { fontSize: 18, fontFamily: 'Nunito-ExtraBold', color: '#fff' },
+  modalBody: { padding: 20 },
+  modalQuestion: {
+    fontSize: 20, fontFamily: 'Nunito-ExtraBold', color: '#1A1A1A',
+    textAlign: 'center', lineHeight: 28, marginBottom: 8,
+  },
+  modalProductName: { color: '#E75480' },
+  modalSub: {
+    fontSize: 13, fontFamily: 'Nunito-Regular', color: '#888',
+    textAlign: 'center', marginBottom: 20,
+  },
+  modalBtns: { gap: 10 },
+  modalBtnYes: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: '#E75480', borderRadius: 14, paddingVertical: 14,
+  },
+  modalBtnYesText: { fontSize: 16, fontFamily: 'Nunito-Bold', color: '#fff' },
+  modalBtnNo: {
+    alignItems: 'center', paddingVertical: 12,
+  },
+  modalBtnNoText: { fontSize: 15, fontFamily: 'Nunito-SemiBold', color: '#aaa' },
+
   mainContainer: { flex: 1, backgroundColor: '#FFF1F6' },
   scrollContent: { padding: 16, paddingBottom: 100 },
 
