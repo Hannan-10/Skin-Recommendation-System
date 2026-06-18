@@ -106,7 +106,7 @@ export default function RoutineSetup() {
           <View style={styles.savedActions}>
             <TouchableOpacity
               style={styles.savedScanBtn}
-              onPress={() => router.replace('/skinresult?mode=camera&routineCheck=true')}
+              onPress={() => router.replace('/skinresult?routineCheck=true')}
             >
               <Ionicons name="scan-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.savedScanBtnText}>Scan Skin Now</Text>
