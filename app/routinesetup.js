@@ -38,6 +38,7 @@ export default function RoutineSetup() {
   const [useMorning, setUseMorning] = useState(true);
   const [useEvening, setUseEvening] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [routineSaved, setRoutineSaved] = useState(false);
 
   if (!product) {
     return (
@@ -82,11 +83,48 @@ export default function RoutineSetup() {
       // Non-fatal
     } finally {
       setSaving(false);
-      router.replace('/(drawer)/(tabs)/home');
+      setRoutineSaved(true);
     }
   };
 
   const icon = CATEGORY_ICONS[product._category] || 'sparkles-outline';
+
+  // ── Routine saved confirmation ──────────────────────────────────────────────
+  if (routineSaved) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.savedScreen}>
+          <LinearGradient colors={['#E75480', '#FF6B9D']} style={styles.savedIconWrap}>
+            <Ionicons name="checkmark-circle" size={48} color="#fff" />
+          </LinearGradient>
+          <Text style={styles.savedTitle}>Routine Started!</Text>
+          <Text style={styles.savedSub}>
+            <Text style={{ fontFamily: 'Nunito-Bold', color: '#1A1A1A' }}>{product.name}</Text>
+            {'\n'}is now your active routine product.
+          </Text>
+
+          <View style={styles.savedActions}>
+            <TouchableOpacity
+              style={styles.savedScanBtn}
+              onPress={() => router.replace('/skinresult?mode=camera&routineCheck=true')}
+            >
+              <Ionicons name="scan-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.savedScanBtnText}>Scan Skin Now</Text>
+            </TouchableOpacity>
+            <Text style={styles.savedScanHint}>
+              Scan at any time to track how your skin improves
+            </Text>
+            <TouchableOpacity
+              style={styles.savedHomeBtn}
+              onPress={() => router.replace('/(drawer)/(tabs)/home')}
+            >
+              <Text style={styles.savedHomeBtnText}>Go to Home</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -326,4 +364,34 @@ const styles = StyleSheet.create({
 
   cancelBtn: { alignItems: 'center', marginTop: 14, paddingVertical: 10 },
   cancelBtnText: { fontSize: 15, fontFamily: 'Nunito-SemiBold', color: '#aaa', textDecorationLine: 'underline' },
+
+  savedScreen: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32,
+  },
+  savedIconWrap: {
+    width: 88, height: 88, borderRadius: 44,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+  },
+  savedTitle: {
+    fontSize: 28, fontFamily: 'Nunito-ExtraBold', color: '#1A1A1A', marginBottom: 10,
+  },
+  savedSub: {
+    fontSize: 15, fontFamily: 'Nunito-Regular', color: '#888',
+    textAlign: 'center', lineHeight: 22, marginBottom: 36,
+  },
+  savedActions: { width: '100%', gap: 12 },
+  savedScanBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#E75480', paddingVertical: 16, borderRadius: 16,
+    elevation: 4, shadowColor: '#E75480', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
+  },
+  savedScanBtnText: { fontSize: 17, fontFamily: 'Nunito-Bold', color: '#fff' },
+  savedScanHint: {
+    fontSize: 12, fontFamily: 'Nunito-Regular', color: '#aaa', textAlign: 'center',
+  },
+  savedHomeBtn: {
+    alignItems: 'center', paddingVertical: 14, borderRadius: 16,
+    borderWidth: 1.5, borderColor: '#FDE2E8',
+  },
+  savedHomeBtnText: { fontSize: 15, fontFamily: 'Nunito-SemiBold', color: '#E75480' },
 });
