@@ -163,6 +163,16 @@ export default function Progress() {
           </View>
         </LinearGradient>
 
+        {/* ── Scan button (always visible) ── */}
+        <TouchableOpacity
+          style={styles.scanProgressBtn}
+          onPress={() => router.push('/skinresult?mode=camera&routineCheck=true')}
+        >
+          <Ionicons name="scan-outline" size={18} color="#E75480" />
+          <Text style={styles.scanProgressBtnText}>Scan Skin to Check Progress</Text>
+          <Ionicons name="chevron-forward" size={16} color="#E75480" />
+        </TouchableOpacity>
+
         {/* ── No improvement warning ── */}
         {noImprovement && (
           <View style={styles.warningCard}>
@@ -272,7 +282,7 @@ export default function Progress() {
             <Text style={styles.noDataSub}>
               After using your product, go to home and confirm usage, then scan your skin to start tracking.
             </Text>
-            <TouchableOpacity style={styles.scanNowBtn} onPress={() => router.push('/skinresult?mode=camera')}>
+            <TouchableOpacity style={styles.scanNowBtn} onPress={() => router.push('/skinresult?mode=camera&routineCheck=true')}>
               <Ionicons name="camera-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
               <Text style={styles.scanNowBtnText}>Scan Now</Text>
             </TouchableOpacity>
@@ -340,6 +350,16 @@ const styles = StyleSheet.create({
   },
   daysNum: { fontSize: 20, fontFamily: 'Nunito-ExtraBold', color: '#fff' },
   daysLabel: { fontSize: 10, fontFamily: 'Nunito-Regular', color: 'rgba(255,255,255,0.85)' },
+
+  scanProgressBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 14,
+    borderWidth: 1.5, borderColor: '#FFE3ED',
+    elevation: 1, shadowColor: '#E75480', shadowOpacity: 0.06, shadowRadius: 4,
+  },
+  scanProgressBtnText: {
+    flex: 1, fontSize: 14, fontFamily: 'Nunito-SemiBold', color: '#E75480',
+  },
 
   // ── Warning ──
   warningCard: {
