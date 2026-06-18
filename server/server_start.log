@@ -86,3 +86,12 @@ I0000 00:00:1780953108.073893   17172 device_compiler.h:188] Compiled cluster us
 172.20.10.1 - - [18/Jun/2026 02:59:14] "POST /predict HTTP/1.1" 200 -
 172.20.10.1 - - [18/Jun/2026 02:59:15] "POST /detect HTTP/1.1" 200 -
 172.20.10.1 - - [18/Jun/2026 02:59:31] "POST /recommend HTTP/1.1" 200 -
+192.168.10.17 - - [18/Jun/2026 03:40:40] "POST /predict HTTP/1.1" 200 -
+192.168.10.17 - - [18/Jun/2026 03:40:41] "POST /detect HTTP/1.1" 200 -
+192.168.10.17 - - [18/Jun/2026 03:40:46] "POST /recommend HTTP/1.1" 200 -
+192.168.10.17 - - [18/Jun/2026 03:42:04] "POST /predict HTTP/1.1" 200 -
+192.168.10.17 - - [18/Jun/2026 03:42:04] "POST /detect HTTP/1.1" 200 -
+192.168.10.17 - - [18/Jun/2026 03:42:08] "POST /recommend HTTP/1.1" 200 -
+192.168.10.17 - - [18/Jun/2026 03:42:48] "POST /predict HTTP/1.1" 200 -
+192.168.10.17 - - [18/Jun/2026 03:42:49] "POST /detect HTTP/1.1" 200 -
+192.168.10.17 - - [18/Jun/2026 03:42:53] "POST /recommend HTTP/1.1" 200 -
