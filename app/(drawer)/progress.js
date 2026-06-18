@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useCallback } from 'react'
+import { useFocusEffect } from '@react-navigation/native'
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView,
   TouchableOpacity, ActivityIndicator,
@@ -43,16 +44,19 @@ export default function Progress() {
   const [loading, setLoading] = useState(true)
   const [routine, setRoutine] = useState(null)
 
-  useEffect(() => {
-    ;(async () => {
-      try {
-        const r = await getActiveRoutine().catch(() => null)
-        setRoutine(r)
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [])
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true)
+      ;(async () => {
+        try {
+          const r = await getActiveRoutine().catch(() => null)
+          setRoutine(r)
+        } finally {
+          setLoading(false)
+        }
+      })()
+    }, [])
+  )
 
   const goHome = () => router.replace('/(drawer)/(tabs)/home')
 

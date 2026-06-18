@@ -12,6 +12,7 @@ import {
   ScrollView,
   Animated,
   Easing,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -28,6 +29,7 @@ export default function SkinResult() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [routineScanType, setRoutineScanType] = useState(null); // 'baseline' | 'progress'
+  const [routineSaving, setRoutineSaving] = useState(false);
   const spinAnim = useRef(new Animated.Value(0));
   const timerRef = useRef(null);
   const startRef = useRef(0);
@@ -141,14 +143,16 @@ export default function SkinResult() {
     }
   };
 
-  // Keep lastScan updated so recs screen always has fresh data
+  // Keep lastScan updated and save routine progress scan
   useEffect(() => {
     if (skinType && conditions.length > 0) {
       saveScanResult({ skinType, conditions }).catch(() => {});
       if (isRoutineCheck) {
+        setRoutineSaving(true);
         saveRoutineProgressScan({ skinType, conditions })
           .then(type => setRoutineScanType(type))
-          .catch(() => {});
+          .catch(() => setRoutineScanType('progress'))
+          .finally(() => setRoutineSaving(false));
       }
       setSaved(false);
     }
@@ -284,20 +288,28 @@ export default function SkinResult() {
               /* ── Routine progress flow ── */
               <>
                 <View style={styles.routineCheckBanner}>
-                  <Ionicons name="checkmark-circle" size={20} color="#00C896" />
+                  {routineSaving
+                    ? <ActivityIndicator size="small" color="#00C896" />
+                    : <Ionicons name="checkmark-circle" size={20} color="#00C896" />
+                  }
                   <Text style={styles.routineCheckBannerText}>
-                    {routineScanType === 'baseline'
+                    {routineSaving
+                      ? 'Saving scan...'
+                      : routineScanType === 'baseline'
                       ? 'Baseline saved! Use your product and scan again to see comparison.'
                       : routineScanType === 'progress'
                       ? 'Progress scan saved! View your comparison below.'
-                      : 'Scan saved! Go to Progress to track your results.'}
+                      : 'Scan saved!'}
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={styles.primaryButton}
+                  style={[styles.primaryButton, routineSaving && { opacity: 0.6 }]}
                   onPress={() => router.replace('/(drawer)/progress')}
+                  disabled={routineSaving}
                 >
-                  <Text style={styles.primaryText}>View Progress Report</Text>
+                  <Text style={styles.primaryText}>
+                    {routineSaving ? 'Saving...' : 'View Progress Report'}
+                  </Text>
                 </TouchableOpacity>
               </>
             ) : (
