@@ -117,22 +117,24 @@ function ProductCard({ product, categoryKey, index, productIndex }) {
 
       {/* Card body */}
       <View style={styles.cardBody}>
-        <Text style={styles.cardBrand} numberOfLines={1}>{product.brand}</Text>
-        <Text style={styles.cardName}  numberOfLines={2}>{product.name}</Text>
+        <View>
+          <Text style={styles.cardBrand} numberOfLines={1}>{product.brand}</Text>
+          <Text style={styles.cardName}  numberOfLines={2}>{product.name}</Text>
 
-        {/* Benefit tags */}
-        <View style={styles.tagRow}>
-          {(product.beneficial || []).slice(0, 2).map((b, i) => (
-            <View
-              key={i}
-              style={[styles.benefitTag, { backgroundColor: BENEFIT_COLORS[i % BENEFIT_COLORS.length] }]}
-            >
-              <Text style={[styles.benefitTagText, { color: BENEFIT_TEXT[i % BENEFIT_TEXT.length] }]}
-                    numberOfLines={1}>
-                {b}
-              </Text>
-            </View>
-          ))}
+          {/* Benefit tags */}
+          <View style={styles.tagRow}>
+            {(product.beneficial || []).slice(0, 2).map((b, i) => (
+              <View
+                key={i}
+                style={[styles.benefitTag, { backgroundColor: BENEFIT_COLORS[i % BENEFIT_COLORS.length] }]}
+              >
+                <Text style={[styles.benefitTagText, { color: BENEFIT_TEXT[i % BENEFIT_TEXT.length] }]}
+                      numberOfLines={1}>
+                  {b}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
 
         {/* Start Routine button */}
@@ -479,8 +481,12 @@ export default function Recs() {
             </View>
           </View>
           <View style={styles.topPicksList}>
-            {topProducts.map((p, i) => (
-              <ProductCard key={i} product={p} categoryKey={p._category} index={i} productIndex={i} />
+            {[0, 2].map(start => (
+              <View key={start} style={styles.topPicksRow}>
+                {topProducts.slice(start, start + 2).map((p, i) => (
+                  <ProductCard key={start + i} product={p} categoryKey={p._category} index={start + i} productIndex={start + i} />
+                ))}
+              </View>
             ))}
           </View>
         </View>
@@ -675,8 +681,10 @@ const styles = StyleSheet.create({
 
   cardsScroll: { paddingHorizontal: 16, paddingBottom: 4 },
   topPicksList: {
-    flexDirection: 'row', flexWrap: 'wrap',
     paddingHorizontal: 12, gap: 14,
+  },
+  topPicksRow: {
+    flexDirection: 'row', alignItems: 'stretch', gap: 14,
   },
 
   emptySection: {
@@ -690,8 +698,7 @@ const styles = StyleSheet.create({
 
   // ── Product card ───────────────────────────────────────────────────────────
   card: {
-    width: (SCREEN_W - 52) / 2,
-    marginRight: 0,
+    flex: 1,
     borderRadius: 20,
     backgroundColor: '#fff',
     overflow: 'hidden',
@@ -728,7 +735,7 @@ const styles = StyleSheet.create({
   matchPct: { fontSize: 15, fontFamily: 'Nunito-ExtraBold' },
   matchLabel: { fontSize: 9, fontFamily: 'Nunito-Regular', color: '#999' },
 
-  cardBody: { padding: 12 },
+  cardBody: { padding: 12, flex: 1, justifyContent: 'space-between' },
   cardBrand: {
     fontSize: 11, fontFamily: 'Nunito-SemiBold', color: '#E75480', marginBottom: 2,
     textTransform: 'uppercase', letterSpacing: 0.5,
@@ -743,7 +750,7 @@ const styles = StyleSheet.create({
   routineBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#E75480', borderRadius: 10,
-    paddingVertical: 7, marginTop: 8,
+    paddingVertical: 7,
   },
   routineBtnText: { fontSize: 11, fontFamily: 'Nunito-Bold', color: '#fff' },
 
