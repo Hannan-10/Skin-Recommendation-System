@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
-import { saveScanResult, saveScanToHistory } from '../firebase/user';
+import { saveScanResult, saveScanToHistory, saveRoutineProgressScan } from '../firebase/user';
 import { API_BASE } from './config';
 import {
   Image,
@@ -27,6 +27,7 @@ export default function SkinResult() {
   const [progress, setProgress] = useState(0);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [routineScanType, setRoutineScanType] = useState(null); // 'baseline' | 'progress'
   const spinAnim = useRef(new Animated.Value(0));
   const timerRef = useRef(null);
   const startRef = useRef(0);
@@ -39,6 +40,7 @@ export default function SkinResult() {
   };
 
   useEffect(() => {
+    if (isRoutineCheck) return; // show options screen, don't auto-launch
     if (mode === 'camera') pickFromCamera();
     else pickFromGallery();
   }, [mode]);
@@ -143,6 +145,11 @@ export default function SkinResult() {
   useEffect(() => {
     if (skinType && conditions.length > 0) {
       saveScanResult({ skinType, conditions }).catch(() => {});
+      if (isRoutineCheck) {
+        saveRoutineProgressScan({ skinType, conditions })
+          .then(type => setRoutineScanType(type))
+          .catch(() => {});
+      }
       setSaved(false);
     }
   }, [skinType]);
@@ -279,7 +286,11 @@ export default function SkinResult() {
                 <View style={styles.routineCheckBanner}>
                   <Ionicons name="checkmark-circle" size={20} color="#00C896" />
                   <Text style={styles.routineCheckBannerText}>
-                    Progress scan saved! Compare with your baseline below.
+                    {routineScanType === 'baseline'
+                      ? 'Baseline saved! Use your product and scan again to see comparison.'
+                      : routineScanType === 'progress'
+                      ? 'Progress scan saved! View your comparison below.'
+                      : 'Scan saved! Go to Progress to track your results.'}
                   </Text>
                 </View>
                 <TouchableOpacity

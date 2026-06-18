@@ -116,11 +116,42 @@ export async function saveActiveRoutine(params: {
   }
 }
 
+export async function saveRoutineProgressScan(params: {
+  skinType: string
+  conditions: { label: string; confidence: number }[]
+}): Promise<'baseline' | 'progress' | null> {
+  if (!auth || !db) return null
+  const user = auth.currentUser
+  if (!user) return null
+  const ref = doc(db, 'users', user.uid)
+  try {
+    const snap = await getDoc(ref)
+    const routine = snap.data()?.activeRoutine
+    if (!routine) return null
+    const scanData = {
+      skinType: params.skinType,
+      conditions: params.conditions,
+      scannedAt: serverTimestamp(),
+    }
+    if (!routine.baseScan) {
+      await updateDoc(ref, { 'activeRoutine.baseScan': scanData })
+      return 'baseline'
+    } else {
+      await updateDoc(ref, { 'activeRoutine.latestProgressScan': scanData })
+      return 'progress'
+    }
+  } catch (e) {
+    console.warn('saveRoutineProgressScan failed', e)
+    return null
+  }
+}
+
 export async function getActiveRoutine(): Promise<{
   productIndex: number
   product: { name: string; brand: string; type: string; category: string }
   routineTimes: string[]
   baseScan: { skinType: string; conditions: { label: string; confidence: number }[]; scannedAt: any } | null
+  latestProgressScan: { skinType: string; conditions: { label: string; confidence: number }[]; scannedAt: any } | null
   startedAt: any
   lastCheckedAt: any
   noImprovementCount: number

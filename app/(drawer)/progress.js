@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Stack, useRouter } from 'expo-router'
-import { getActiveRoutine, getLastScanResult, clearActiveRoutine } from '../../firebase/user'
+import { getActiveRoutine, clearActiveRoutine } from '../../firebase/user'
 import PieChart from '../components/PieChart'
 
 const CONDITION_COLORS = {
@@ -42,17 +42,12 @@ export default function Progress() {
 
   const [loading, setLoading] = useState(true)
   const [routine, setRoutine] = useState(null)
-  const [latestScan, setLatestScan] = useState(null)
 
   useEffect(() => {
     ;(async () => {
       try {
-        const [r, latest] = await Promise.all([
-          getActiveRoutine().catch(() => null),
-          getLastScanResult().catch(() => null),
-        ])
+        const r = await getActiveRoutine().catch(() => null)
         setRoutine(r)
-        setLatestScan(latest)
       } finally {
         setLoading(false)
       }
@@ -98,13 +93,8 @@ export default function Progress() {
   }
 
   const baseScan    = routine.baseScan
-  const currentScan = latestScan
-
-  // Only compare if the latest scan was done AFTER the routine started
-  // (i.e. it's a real progress scan, not the same baseline scan)
-  const baseTs    = baseScan?.scannedAt?.seconds  ?? (routine.startedAt?.seconds ?? 0)
-  const currentTs = currentScan?.scannedAt?.seconds ?? 0
-  const hasComparison = !!(baseScan && currentScan && currentTs > baseTs)
+  const currentScan = routine.latestProgressScan || null
+  const hasComparison = !!(baseScan && currentScan)
 
   // Compute per-condition improvement
   const improvements = ALL_CONDITIONS.map(label => {
@@ -166,7 +156,7 @@ export default function Progress() {
         {/* ── Scan button (always visible) ── */}
         <TouchableOpacity
           style={styles.scanProgressBtn}
-          onPress={() => router.push('/skinresult?mode=camera&routineCheck=true')}
+          onPress={() => router.push('/skinresult?routineCheck=true')}
         >
           <Ionicons name="scan-outline" size={18} color="#E75480" />
           <Text style={styles.scanProgressBtnText}>Scan Skin to Check Progress</Text>
@@ -278,13 +268,24 @@ export default function Progress() {
         ) : (
           <View style={styles.noDataCard}>
             <Ionicons name="scan-outline" size={40} color="#ddd" />
-            <Text style={styles.noDataTitle}>Scan to see progress</Text>
-            <Text style={styles.noDataSub}>
-              After using your product, go to home and confirm usage, then scan your skin to start tracking.
-            </Text>
-            <TouchableOpacity style={styles.scanNowBtn} onPress={() => router.push('/skinresult?mode=camera&routineCheck=true')}>
+            {baseScan ? (
+              <>
+                <Text style={styles.noDataTitle}>Baseline Set!</Text>
+                <Text style={styles.noDataSub}>
+                  Use your product for a few days, then scan again to see how your skin has improved.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.noDataTitle}>Scan to Start Tracking</Text>
+                <Text style={styles.noDataSub}>
+                  Scan your skin now to set your baseline. After using your product, scan again to see the comparison.
+                </Text>
+              </>
+            )}
+            <TouchableOpacity style={styles.scanNowBtn} onPress={() => router.push('/skinresult?routineCheck=true')}>
               <Ionicons name="camera-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
-              <Text style={styles.scanNowBtnText}>Scan Now</Text>
+              <Text style={styles.scanNowBtnText}>{baseScan ? 'Scan for Comparison' : 'Scan Now'}</Text>
             </TouchableOpacity>
           </View>
         )}
