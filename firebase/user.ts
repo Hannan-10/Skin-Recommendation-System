@@ -1,6 +1,6 @@
 import { auth, db } from './index'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, updateEmail, signOut } from 'firebase/auth'
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore'
+import { doc, setDoc, getDoc, getDocFromServer, updateDoc, serverTimestamp, collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore'
 
 export async function registerUser(params: { name: string; email: string; password: string; age: number; gender: string }) {
   const { name, email, password, age, gender } = params
@@ -96,7 +96,7 @@ export async function saveActiveRoutine(params: {
   productIndex: number
   product: { name: string; brand: string; type: string; category: string }
   routineTimes: string[]
-  baseScan: { skinType: string; conditions: { label: string; confidence: number }[]; scannedAt: any } | null
+  baseScan: { skinType: string; conditions: { label: string; confidence: number }[]; savedAt: number } | null
 }) {
   if (!auth || !db) return
   const user = auth.currentUser
@@ -119,30 +119,32 @@ export async function saveActiveRoutine(params: {
 export async function saveRoutineProgressScan(params: {
   skinType: string
   conditions: { label: string; confidence: number }[]
-}): Promise<'baseline' | 'progress' | null> {
-  if (!auth || !db) return null
+}): Promise<boolean> { // true = first scan (new baseline), false = progress scan
+  if (!auth || !db) return false
   const user = auth.currentUser
-  if (!user) return null
+  if (!user) return false
   const ref = doc(db, 'users', user.uid)
   try {
-    const snap = await getDoc(ref)
+    const snap = await getDocFromServer(ref) // bypass cache — always read fresh
     const routine = snap.data()?.activeRoutine
-    if (!routine) return null
+    if (!routine) return false
     const scanData = {
       skinType: params.skinType,
       conditions: params.conditions,
-      scannedAt: serverTimestamp(),
+      savedAt: Date.now(), // plain number — reliable for comparison
     }
-    if (!routine.baseScan) {
-      await updateDoc(ref, { 'activeRoutine.baseScan': scanData })
-      return 'baseline'
-    } else {
-      await updateDoc(ref, { 'activeRoutine.latestProgressScan': scanData })
-      return 'progress'
+    const isFirstScan = !routine.baseScan
+    const updates: Record<string, any> = {
+      'activeRoutine.latestProgressScan': scanData,
     }
+    if (isFirstScan) {
+      updates['activeRoutine.baseScan'] = scanData
+    }
+    await updateDoc(ref, updates) // single atomic write
+    return isFirstScan
   } catch (e) {
     console.warn('saveRoutineProgressScan failed', e)
-    return null
+    return false
   }
 }
 
@@ -150,8 +152,8 @@ export async function getActiveRoutine(): Promise<{
   productIndex: number
   product: { name: string; brand: string; type: string; category: string }
   routineTimes: string[]
-  baseScan: { skinType: string; conditions: { label: string; confidence: number }[]; scannedAt: any } | null
-  latestProgressScan: { skinType: string; conditions: { label: string; confidence: number }[]; scannedAt: any } | null
+  baseScan: { skinType: string; conditions: { label: string; confidence: number }[]; savedAt: number } | null
+  latestProgressScan: { skinType: string; conditions: { label: string; confidence: number }[]; savedAt: number } | null
   startedAt: any
   lastCheckedAt: any
   noImprovementCount: number

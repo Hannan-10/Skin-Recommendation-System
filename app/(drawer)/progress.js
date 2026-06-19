@@ -98,7 +98,11 @@ export default function Progress() {
 
   const baseScan    = routine.baseScan
   const currentScan = routine.latestProgressScan || null
-  const hasComparison = !!(baseScan && currentScan)
+  // only show comparison if the latest scan was taken AFTER the baseline
+  const hasComparison = !!(
+    baseScan && currentScan &&
+    (currentScan.savedAt || 0) > (baseScan.savedAt || 0)
+  )
 
   // Compute per-condition improvement
   const improvements = ALL_CONDITIONS.map(label => {

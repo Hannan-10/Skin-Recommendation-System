@@ -28,7 +28,7 @@ export default function SkinResult() {
   const [progress, setProgress] = useState(0);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [routineScanType, setRoutineScanType] = useState(null); // 'baseline' | 'progress'
+  const [isFirstRoutineScan, setIsFirstRoutineScan] = useState(null); // null=pending, true=baseline set, false=progress scan
   const [routineSaving, setRoutineSaving] = useState(false);
   const spinAnim = useRef(new Animated.Value(0));
   const timerRef = useRef(null);
@@ -150,8 +150,8 @@ export default function SkinResult() {
       if (isRoutineCheck) {
         setRoutineSaving(true);
         saveRoutineProgressScan({ skinType, conditions })
-          .then(type => setRoutineScanType(type))
-          .catch(() => setRoutineScanType('progress'))
+          .then(firstScan => setIsFirstRoutineScan(firstScan))
+          .catch(() => setIsFirstRoutineScan(false))
           .finally(() => setRoutineSaving(false));
       }
       setSaved(false);
@@ -295,9 +295,9 @@ export default function SkinResult() {
                   <Text style={styles.routineCheckBannerText}>
                     {routineSaving
                       ? 'Saving scan...'
-                      : routineScanType === 'baseline'
-                      ? 'Baseline saved! Use your product and scan again to see comparison.'
-                      : routineScanType === 'progress'
+                      : isFirstRoutineScan === true
+                      ? 'Baseline saved! Scan again after using your product to see comparison.'
+                      : isFirstRoutineScan === false
                       ? 'Progress scan saved! View your comparison below.'
                       : 'Scan saved!'}
                   </Text>
