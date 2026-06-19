@@ -82,6 +82,7 @@ export default function SkinResult() {
       }
     }
   }, [loading]);
+  // Returns the skin type string
   const classifyWithModel = async (uri, manageLoading = true) => {
     try {
       if (manageLoading) setLoading(true);
@@ -92,17 +93,21 @@ export default function SkinResult() {
       if (json && json.type) {
         setSkinType(json.type);
         setConfidence(json.confidence ?? null);
+        return json.type;
       }
     } catch {
       const labels = ['oily', 'dry', 'normal'];
-      const idx = Math.floor(Math.random() * labels.length);
-      setSkinType(labels[idx]);
+      const t = labels[Math.floor(Math.random() * labels.length)];
+      setSkinType(t);
       setConfidence(null);
+      return t;
     } finally {
       if (manageLoading) setLoading(false);
     }
+    return null;
   };
 
+  // Returns the conditions array
   const detectConditions = async (uri) => {
     try {
       const formData = new FormData();
@@ -113,8 +118,9 @@ export default function SkinResult() {
         const mapped = json.detections
           .filter(d => d && d.label)
           .map(d => ({ label: d.label, confidence: Math.max(0, Math.min(1, d.confidence ?? 0)) }));
-        setConditions(mapped.slice(0, 5));
-        return;
+        const result = mapped.slice(0, 5);
+        setConditions(result);
+        return result;
       }
       throw new Error('bad');
     } catch {
@@ -122,39 +128,50 @@ export default function SkinResult() {
       const fake = labels.map(l => ({ label: l, confidence: Math.random() * 0.7 + 0.2 }))
         .sort((a, b) => b.confidence - a.confidence);
       setConditions(fake);
+      return fake;
     }
   };
 
   const runBoth = async (uri) => {
     setLoading(true);
     try {
-      await Promise.allSettled([classifyWithModel(uri, false), detectConditions(uri)]);
+      const [typeResult, condResult] = await Promise.allSettled([
+        classifyWithModel(uri, false),
+        detectConditions(uri),
+      ]);
+
+      const finalType = typeResult.status === 'fulfilled' ? typeResult.value : null;
+      const finalConds = condResult.status === 'fulfilled' ? condResult.value : [];
+
+      console.log('[runBoth] skinType:', finalType, 'conditions:', finalConds.length, 'isRoutineCheck:', isRoutineCheck);
+
+      // Save last scan to Firebase (always)
+      if (finalType) {
+        saveScanResult({ skinType: finalType, conditions: finalConds }).catch(e =>
+          console.warn('[runBoth] saveScanResult failed:', e)
+        );
+      }
+
+      // For routine check: capture data and save progress scan
+      if (isRoutineCheck && finalType && finalConds.length > 0) {
+        const captured = { skinType: finalType, conditions: finalConds, savedAt: Date.now() };
+        console.log('[runBoth] setting freshScanData, savedAt:', captured.savedAt);
+        setFreshScanData(JSON.stringify(captured));
+        saveRoutineProgressScan({ skinType: finalType, conditions: finalConds }).catch(e =>
+          console.warn('[runBoth] saveRoutineProgressScan failed:', e)
+        );
+      }
+
+      setSaved(false);
     } finally {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
       setProgress(100);
-      setTimeout(() => {
-        setLoading(false);
-      }, 500);
+      setTimeout(() => setLoading(false), 500);
     }
   };
-
-  // When scan completes: save to Firebase + capture data for progress screen
-  useEffect(() => {
-    if (skinType && conditions.length > 0) {
-      saveScanResult({ skinType, conditions }).catch(() => {});
-      if (isRoutineCheck) {
-        // Capture scan data immediately for passing to progress screen
-        const captured = { skinType, conditions, savedAt: Date.now() };
-        setFreshScanData(JSON.stringify(captured));
-        // Save to Firebase in background — progress screen doesn't wait for this
-        saveRoutineProgressScan({ skinType, conditions }).catch(() => {});
-      }
-      setSaved(false);
-    }
-  }, [skinType]);
 
   const handleSaveResult = async () => {
     if (saved || saving) return;
@@ -288,7 +305,7 @@ export default function SkinResult() {
                 <View style={styles.routineCheckBanner}>
                   <Ionicons name="checkmark-circle" size={20} color="#00C896" />
                   <Text style={styles.routineCheckBannerText}>
-                    Scan complete! View your progress comparison below.
+                    {freshScanData ? 'Scan complete! View your progress comparison below.' : 'Processing scan...'}
                   </Text>
                 </View>
                 <TouchableOpacity

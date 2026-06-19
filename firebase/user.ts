@@ -126,8 +126,13 @@ export async function saveRoutineProgressScan(params: {
   const ref = doc(db, 'users', user.uid)
   try {
     const snap = await getDocFromServer(ref) // bypass cache — always read fresh
-    const routine = snap.data()?.activeRoutine
-    if (!routine) return false
+    const data = snap.data()
+    const routine = data?.activeRoutine
+    console.log('[saveRoutineProgressScan] activeRoutine:', JSON.stringify(routine ? { hasBaseScan: !!routine.baseScan, hasLatest: !!routine.latestProgressScan } : null))
+    if (!routine) {
+      console.warn('[saveRoutineProgressScan] no activeRoutine found in doc')
+      return false
+    }
     const scanData = {
       skinType: params.skinType,
       conditions: params.conditions,
@@ -140,10 +145,12 @@ export async function saveRoutineProgressScan(params: {
     if (isFirstScan) {
       updates['activeRoutine.baseScan'] = scanData
     }
+    console.log('[saveRoutineProgressScan] isFirstScan:', isFirstScan, '— writing updates')
     await updateDoc(ref, updates) // single atomic write
+    console.log('[saveRoutineProgressScan] write complete')
     return isFirstScan
   } catch (e) {
-    console.warn('saveRoutineProgressScan failed', e)
+    console.warn('[saveRoutineProgressScan] FAILED:', e)
     return false
   }
 }
