@@ -6,18 +6,17 @@ import {
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
-import { Stack, useRouter } from 'expo-router'
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router'
 import { getActiveRoutine, clearActiveRoutine } from '../../firebase/user'
 import PieChart from '../components/PieChart'
 
 const CONDITION_COLORS = {
-  acne:       '#E75480',
-  wrinkles:   '#FF9DB3',
-  pores:      '#FBC6D5',
+  acne:         '#E75480',
+  wrinkles:     '#FF9DB3',
+  pores:        '#FBC6D5',
   'dark spots': '#FADDE5',
-  blackheads: '#A78BFA',
+  blackheads:   '#A78BFA',
 }
-
 const ALL_CONDITIONS = ['acne', 'wrinkles', 'pores', 'dark spots', 'blackheads']
 
 function pct(val) { return Math.round((val || 0) * 100) }
@@ -25,11 +24,7 @@ function pct(val) { return Math.round((val || 0) * 100) }
 function buildPieData(conditions) {
   return ALL_CONDITIONS.map(label => {
     const match = (conditions || []).find(c => c.label === label)
-    return {
-      value: match ? pct(match.confidence) : 0,
-      color: CONDITION_COLORS[label] || '#ccc',
-      label,
-    }
+    return { value: match ? pct(match.confidence) : 0, color: CONDITION_COLORS[label] || '#ccc', label }
   }).filter(d => d.value > 0)
 }
 
@@ -38,8 +33,35 @@ function daysSince(ts) {
   return Math.floor((Date.now() - ts.seconds * 1000) / 86400000)
 }
 
+// ── Comparison logic (frontend "API") ──────────────────────────────────────
+function compareScans(baseScan, currentScan) {
+  const improvements = ALL_CONDITIONS.map(label => {
+    const base    = baseScan?.conditions?.find(c => c.label === label)
+    const current = currentScan?.conditions?.find(c => c.label === label)
+    if (!base && !current) return null
+    const basePct    = pct(base?.confidence    || 0)
+    const currentPct = pct(current?.confidence || 0)
+    const delta = basePct - currentPct // positive = improved (condition went down)
+    return { label, basePct, currentPct, delta }
+  }).filter(Boolean)
+
+  const improvedCount     = improvements.filter(i => i.delta > 0).length
+  const deterioratedCount = improvements.filter(i => i.delta < 0).length
+  const overallDelta      = improvements.length
+    ? Math.round(improvements.reduce((s, i) => s + i.delta, 0) / improvements.length)
+    : 0
+
+  return { improvements, improvedCount, deterioratedCount, overallDelta }
+}
+
 export default function Progress() {
   const router = useRouter()
+  const { freshScan: freshScanStr } = useLocalSearchParams()
+
+  // Parse fresh scan data passed from skinresult after a scan
+  const freshScan = freshScanStr
+    ? (() => { try { return JSON.parse(freshScanStr) } catch { return null } })()
+    : null
 
   const [loading, setLoading] = useState(true)
   const [routine, setRoutine] = useState(null)
@@ -71,7 +93,6 @@ export default function Progress() {
     )
   }
 
-  // ── No active routine ────────────────────────────────────────────────────
   if (!routine) {
     return (
       <SafeAreaView style={styles.container}>
@@ -96,36 +117,27 @@ export default function Progress() {
     )
   }
 
+  // currentScan = fresh scan passed directly from skinresult (preferred)
+  //             OR saved latestProgressScan from Firebase (when viewing later)
   const baseScan    = routine.baseScan
-  const currentScan = routine.latestProgressScan || null
-  // only show comparison if the latest scan was taken AFTER the baseline
+  const currentScan = freshScan || routine.latestProgressScan || null
+
+  // Show comparison only when current scan is newer than baseline
   const hasComparison = !!(
     baseScan && currentScan &&
     (currentScan.savedAt || 0) > (baseScan.savedAt || 0)
   )
 
-  // Compute per-condition improvement
-  const improvements = ALL_CONDITIONS.map(label => {
-    const base    = baseScan?.conditions?.find(c => c.label === label)
-    const current = currentScan?.conditions?.find(c => c.label === label)
-    if (!base && !current) return null
-    const basePct    = pct(base?.confidence    || 0)
-    const currentPct = pct(current?.confidence || 0)
-    const delta = basePct - currentPct // positive = improved
-    return { label, basePct, currentPct, delta }
-  }).filter(Boolean)
+  const { improvements, improvedCount, deterioratedCount, overallDelta } =
+    hasComparison ? compareScans(baseScan, currentScan) : { improvements: [], improvedCount: 0, deterioratedCount: 0, overallDelta: 0 }
 
-  const improvedCount = improvements.filter(i => i.delta > 0).length
-  const overallDelta  = improvements.length
-    ? Math.round(improvements.reduce((s, i) => s + i.delta, 0) / improvements.length)
-    : 0
   const noImprovement = routine.noImprovementCount >= 2
+  const suggestSwitch = hasComparison && overallDelta < 0 && deterioratedCount > improvedCount
 
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* ── Top nav ── */}
       <View style={styles.topNav}>
         <TouchableOpacity style={styles.backBtn} onPress={goHome}>
           <Ionicons name="arrow-back" size={22} color="#2D2D2D" />
@@ -161,7 +173,7 @@ export default function Progress() {
           </View>
         </LinearGradient>
 
-        {/* ── Scan button (always visible) ── */}
+        {/* ── Scan button ── */}
         <TouchableOpacity
           style={styles.scanProgressBtn}
           onPress={() => router.push('/skinresult?routineCheck=true')}
@@ -171,12 +183,14 @@ export default function Progress() {
           <Ionicons name="chevron-forward" size={16} color="#E75480" />
         </TouchableOpacity>
 
-        {/* ── No improvement warning ── */}
-        {noImprovement && (
+        {/* ── Product switch warning ── */}
+        {(noImprovement || suggestSwitch) && (
           <View style={styles.warningCard}>
             <Ionicons name="warning-outline" size={20} color="#E67E22" />
             <View style={{ flex: 1 }}>
-              <Text style={styles.warningTitle}>No visible improvement detected</Text>
+              <Text style={styles.warningTitle}>
+                {suggestSwitch ? 'Skin conditions worsening' : 'No visible improvement detected'}
+              </Text>
               <Text style={styles.warningSub}>
                 Consider trying product #{(routine.productIndex || 0) + 2} from your recommendations.
               </Text>
@@ -193,13 +207,13 @@ export default function Progress() {
           </View>
         )}
 
-        {/* ── Comparison ── */}
+        {/* ── Comparison results ── */}
         {hasComparison ? (
           <>
             {/* Overall score */}
             <View style={styles.scoreCard}>
               <View style={styles.scoreCardLeft}>
-                <Text style={styles.scoreLabel}>Overall Skin Improvement</Text>
+                <Text style={styles.scoreLabel}>Overall Skin Change</Text>
                 <Text style={[
                   styles.scoreValue,
                   { color: overallDelta > 0 ? '#00C896' : overallDelta < 0 ? '#E75480' : '#888' }
@@ -207,7 +221,11 @@ export default function Progress() {
                   {overallDelta > 0 ? '+' : ''}{overallDelta}%
                 </Text>
                 <Text style={styles.scoreSub}>
-                  {improvedCount}/{improvements.length} conditions improved
+                  {improvedCount > 0
+                    ? `${improvedCount} condition${improvedCount > 1 ? 's' : ''} improved`
+                    : deterioratedCount > 0
+                    ? `${deterioratedCount} condition${deterioratedCount > 1 ? 's' : ''} worsened`
+                    : 'No change detected'}
                 </Text>
               </View>
               <Ionicons
@@ -222,12 +240,12 @@ export default function Progress() {
               <Text style={styles.blockTitle}>Skin Condition Comparison</Text>
               <View style={styles.piesRow}>
                 <View style={styles.pieCard}>
-                  <PieChart data={buildPieData(baseScan.conditions)} size={120} />
+                  <PieChart data={buildPieData(baseScan.conditions)} size={110} />
                   <Text style={styles.pieLabel}>Before</Text>
                 </View>
                 <Ionicons name="arrow-forward" size={24} color="#E75480" style={{ alignSelf: 'center' }} />
                 <View style={styles.pieCard}>
-                  <PieChart data={buildPieData(currentScan.conditions)} size={120} />
+                  <PieChart data={buildPieData(currentScan.conditions)} size={110} />
                   <Text style={styles.pieLabel}>After</Text>
                 </View>
               </View>
@@ -242,16 +260,29 @@ export default function Progress() {
                   <Text style={styles.condLabel}>
                     {item.label.charAt(0).toUpperCase() + item.label.slice(1)}
                   </Text>
-                  <View style={styles.condBarBg}>
-                    <View style={[styles.condBar, {
-                      width: `${item.basePct}%`,
-                      backgroundColor: CONDITION_COLORS[item.label] || '#ccc',
-                      opacity: 0.4,
-                    }]} />
-                    <View style={[styles.condBar, styles.condBarForeground, {
-                      width: `${item.currentPct}%`,
-                      backgroundColor: CONDITION_COLORS[item.label] || '#ccc',
-                    }]} />
+                  <View style={styles.condBarsWrap}>
+                    {/* Before bar */}
+                    <View style={styles.condBarRow}>
+                      <Text style={styles.condBarTag}>Before</Text>
+                      <View style={styles.condBarBg}>
+                        <View style={[styles.condBarFill, {
+                          width: `${item.basePct}%`,
+                          backgroundColor: (CONDITION_COLORS[item.label] || '#ccc') + '66',
+                        }]} />
+                      </View>
+                      <Text style={styles.condBarPct}>{item.basePct}%</Text>
+                    </View>
+                    {/* After bar */}
+                    <View style={styles.condBarRow}>
+                      <Text style={styles.condBarTag}>After</Text>
+                      <View style={styles.condBarBg}>
+                        <View style={[styles.condBarFill, {
+                          width: `${item.currentPct}%`,
+                          backgroundColor: CONDITION_COLORS[item.label] || '#ccc',
+                        }]} />
+                      </View>
+                      <Text style={styles.condBarPct}>{item.currentPct}%</Text>
+                    </View>
                   </View>
                   <Text style={[
                     styles.condDelta,
@@ -261,19 +292,22 @@ export default function Progress() {
                   </Text>
                 </View>
               ))}
-              <View style={styles.condLegend}>
-                <View style={styles.condLegendItem}>
-                  <View style={[styles.condLegendSwatch, { opacity: 0.4, backgroundColor: '#E75480' }]} />
-                  <Text style={styles.condLegendText}>Before</Text>
+
+              {/* Legend */}
+              <View style={styles.legendInline}>
+                <View style={styles.legendInlineItem}>
+                  <View style={[styles.legendInlineSwatch, { opacity: 0.4, backgroundColor: '#E75480' }]} />
+                  <Text style={styles.legendInlineText}>Before (faded)</Text>
                 </View>
-                <View style={styles.condLegendItem}>
-                  <View style={[styles.condLegendSwatch, { backgroundColor: '#E75480' }]} />
-                  <Text style={styles.condLegendText}>After</Text>
+                <View style={styles.legendInlineItem}>
+                  <View style={[styles.legendInlineSwatch, { backgroundColor: '#E75480' }]} />
+                  <Text style={styles.legendInlineText}>After (solid)</Text>
                 </View>
               </View>
             </View>
           </>
         ) : (
+          /* ── No comparison yet ── */
           <View style={styles.noDataCard}>
             <Ionicons name="scan-outline" size={40} color="#ddd" />
             {baseScan ? (
@@ -287,7 +321,7 @@ export default function Progress() {
               <>
                 <Text style={styles.noDataTitle}>Scan to Start Tracking</Text>
                 <Text style={styles.noDataSub}>
-                  Scan your skin now to set your baseline. After using your product, scan again to see the comparison.
+                  Scan your skin now to set your baseline. After using the product, scan again to compare.
                 </Text>
               </>
             )}
@@ -298,7 +332,7 @@ export default function Progress() {
           </View>
         )}
 
-        {/* Legend */}
+        {/* ── Condition color guide ── */}
         <View style={styles.legendBlock}>
           <Text style={styles.legendTitle}>Condition Color Guide</Text>
           <View style={styles.legendRow}>
@@ -312,6 +346,7 @@ export default function Progress() {
             ))}
           </View>
         </View>
+
       </ScrollView>
     </SafeAreaView>
   )
@@ -333,7 +368,6 @@ const styles = StyleSheet.create({
 
   scrollContent: { paddingHorizontal: 16, paddingBottom: 40 },
 
-  // ── Empty states ──
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   emptyTitle: { fontSize: 20, fontFamily: 'Nunito-ExtraBold', color: '#333', marginTop: 16, marginBottom: 8 },
   emptySub: { fontSize: 14, fontFamily: 'Nunito-Regular', color: '#888', textAlign: 'center', lineHeight: 20 },
@@ -343,7 +377,6 @@ const styles = StyleSheet.create({
   },
   goRecsBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 15 },
 
-  // ── Routine banner ──
   routineBanner: {
     borderRadius: 18, padding: 18, flexDirection: 'row',
     alignItems: 'center', marginBottom: 14,
@@ -370,7 +403,6 @@ const styles = StyleSheet.create({
     flex: 1, fontSize: 14, fontFamily: 'Nunito-SemiBold', color: '#E75480',
   },
 
-  // ── Warning ──
   warningCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: '#FFF4E6', borderRadius: 14, padding: 14, marginBottom: 14,
@@ -383,7 +415,6 @@ const styles = StyleSheet.create({
   },
   switchBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 13 },
 
-  // ── Score ──
   scoreCard: {
     backgroundColor: '#fff', borderRadius: 18, padding: 18,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -395,7 +426,6 @@ const styles = StyleSheet.create({
   scoreValue: { fontSize: 36, fontFamily: 'Nunito-ExtraBold' },
   scoreSub: { fontSize: 12, fontFamily: 'Nunito-Regular', color: '#aaa' },
 
-  // ── Pie charts ──
   piesBlock: {
     backgroundColor: '#fff', borderRadius: 18, padding: 16,
     elevation: 2, shadowColor: '#E75480', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
@@ -406,25 +436,27 @@ const styles = StyleSheet.create({
   pieCard: { alignItems: 'center' },
   pieLabel: { marginTop: 8, fontSize: 13, fontFamily: 'Nunito-SemiBold', color: '#555' },
 
-  // ── Condition breakdown ──
   breakdownBlock: {
     backgroundColor: '#fff', borderRadius: 18, padding: 16,
     elevation: 2, shadowColor: '#E75480', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
     marginBottom: 14,
   },
-  condRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  condDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
-  condLabel: { width: 72, fontSize: 12, fontFamily: 'Nunito-SemiBold', color: '#555' },
-  condBarBg: { flex: 1, height: 10, backgroundColor: '#F5F5F5', borderRadius: 5, overflow: 'hidden', position: 'relative' },
-  condBar: { position: 'absolute', top: 0, left: 0, height: 10, borderRadius: 5 },
-  condBarForeground: { zIndex: 1 },
-  condDelta: { width: 40, fontSize: 12, fontFamily: 'Nunito-Bold', textAlign: 'right' },
-  condLegend: { flexDirection: 'row', gap: 16, marginTop: 6 },
-  condLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  condLegendSwatch: { width: 12, height: 12, borderRadius: 3 },
-  condLegendText: { fontSize: 11, fontFamily: 'Nunito-Regular', color: '#888' },
+  condRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginBottom: 14 },
+  condDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0 },
+  condLabel: { width: 72, fontSize: 12, fontFamily: 'Nunito-SemiBold', color: '#555', paddingTop: 2 },
+  condBarsWrap: { flex: 1, gap: 4 },
+  condBarRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  condBarTag: { width: 32, fontSize: 9, fontFamily: 'Nunito-SemiBold', color: '#aaa' },
+  condBarBg: { flex: 1, height: 8, backgroundColor: '#F5F5F5', borderRadius: 4, overflow: 'hidden' },
+  condBarFill: { height: 8, borderRadius: 4 },
+  condBarPct: { width: 28, fontSize: 10, fontFamily: 'Nunito-Bold', color: '#555', textAlign: 'right' },
+  condDelta: { width: 36, fontSize: 12, fontFamily: 'Nunito-Bold', textAlign: 'right', paddingTop: 2 },
 
-  // ── No scan ──
+  legendInline: { flexDirection: 'row', gap: 16, marginTop: 8 },
+  legendInlineItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendInlineSwatch: { width: 12, height: 12, borderRadius: 3 },
+  legendInlineText: { fontSize: 11, fontFamily: 'Nunito-Regular', color: '#888' },
+
   noDataCard: {
     backgroundColor: '#fff', borderRadius: 18, padding: 24,
     alignItems: 'center', elevation: 2, marginBottom: 14,
@@ -438,7 +470,6 @@ const styles = StyleSheet.create({
   },
   scanNowBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 14 },
 
-  // ── Legend ──
   legendBlock: { backgroundColor: '#FFF0F3', borderRadius: 14, padding: 14, marginBottom: 10 },
   legendTitle: { fontSize: 13, fontFamily: 'Nunito-Bold', color: '#330033', marginBottom: 8 },
   legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

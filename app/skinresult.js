@@ -12,7 +12,6 @@ import {
   ScrollView,
   Animated,
   Easing,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -28,8 +27,7 @@ export default function SkinResult() {
   const [progress, setProgress] = useState(0);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [isFirstRoutineScan, setIsFirstRoutineScan] = useState(null); // null=pending, true=baseline set, false=progress scan
-  const [routineSaving, setRoutineSaving] = useState(false);
+  const [freshScanData, setFreshScanData] = useState(null); // captured once when scan completes
   const spinAnim = useRef(new Animated.Value(0));
   const timerRef = useRef(null);
   const startRef = useRef(0);
@@ -143,16 +141,16 @@ export default function SkinResult() {
     }
   };
 
-  // Keep lastScan updated and save routine progress scan
+  // When scan completes: save to Firebase + capture data for progress screen
   useEffect(() => {
     if (skinType && conditions.length > 0) {
       saveScanResult({ skinType, conditions }).catch(() => {});
       if (isRoutineCheck) {
-        setRoutineSaving(true);
-        saveRoutineProgressScan({ skinType, conditions })
-          .then(firstScan => setIsFirstRoutineScan(firstScan))
-          .catch(() => setIsFirstRoutineScan(false))
-          .finally(() => setRoutineSaving(false));
+        // Capture scan data immediately for passing to progress screen
+        const captured = { skinType, conditions, savedAt: Date.now() };
+        setFreshScanData(JSON.stringify(captured));
+        // Save to Firebase in background — progress screen doesn't wait for this
+        saveRoutineProgressScan({ skinType, conditions }).catch(() => {});
       }
       setSaved(false);
     }
@@ -288,28 +286,20 @@ export default function SkinResult() {
               /* ── Routine progress flow ── */
               <>
                 <View style={styles.routineCheckBanner}>
-                  {routineSaving
-                    ? <ActivityIndicator size="small" color="#00C896" />
-                    : <Ionicons name="checkmark-circle" size={20} color="#00C896" />
-                  }
+                  <Ionicons name="checkmark-circle" size={20} color="#00C896" />
                   <Text style={styles.routineCheckBannerText}>
-                    {routineSaving
-                      ? 'Saving scan...'
-                      : isFirstRoutineScan === true
-                      ? 'Baseline saved! Scan again after using your product to see comparison.'
-                      : isFirstRoutineScan === false
-                      ? 'Progress scan saved! View your comparison below.'
-                      : 'Scan saved!'}
+                    Scan complete! View your progress comparison below.
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={[styles.primaryButton, routineSaving && { opacity: 0.6 }]}
-                  onPress={() => router.replace('/(drawer)/progress')}
-                  disabled={routineSaving}
+                  style={[styles.primaryButton, !freshScanData && { opacity: 0.6 }]}
+                  disabled={!freshScanData}
+                  onPress={() => router.replace({
+                    pathname: '/(drawer)/progress',
+                    params: { freshScan: freshScanData },
+                  })}
                 >
-                  <Text style={styles.primaryText}>
-                    {routineSaving ? 'Saving...' : 'View Progress Report'}
-                  </Text>
+                  <Text style={styles.primaryText}>View Progress Report</Text>
                 </TouchableOpacity>
               </>
             ) : (
