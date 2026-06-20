@@ -61,7 +61,7 @@ const BENEFIT_TEXT   = ['#00916E', '#2D71C8', '#C47A15', '#C0315E', '#6D4DF2'];
 // ─────────────────────────────────────────────────────────────────────────────
 // ProductCard
 // ─────────────────────────────────────────────────────────────────────────────
-function ProductCard({ product, categoryKey, index, productIndex }) {
+function ProductCard({ product, categoryKey, index, productIndex, allProducts }) {
   const router = useRouter();
   const cfg = CATEGORY_CFG[categoryKey] || CATEGORY_CFG.Serum;
   const initial = (product.brand || '?').charAt(0).toUpperCase();
@@ -145,6 +145,7 @@ function ProductCard({ product, categoryKey, index, productIndex }) {
             params: {
               productIndex,
               product: JSON.stringify({ ...product, _category: categoryKey }),
+              allProducts: JSON.stringify(allProducts || []),
             },
           })}
           activeOpacity={0.8}
@@ -484,7 +485,7 @@ export default function Recs() {
             {[0, 2].map(start => (
               <View key={start} style={styles.topPicksRow}>
                 {topProducts.slice(start, start + 2).map((p, i) => (
-                  <ProductCard key={start + i} product={p} categoryKey={p._category} index={start + i} productIndex={start + i} />
+                  <ProductCard key={start + i} product={p} categoryKey={p._category} index={start + i} productIndex={start + i} allProducts={topProducts} />
                 ))}
               </View>
             ))}
