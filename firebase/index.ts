@@ -1,7 +1,6 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app'
 import { getAuth, Auth } from 'firebase/auth'
 import { getFirestore, Firestore } from 'firebase/firestore'
-import { getStorage, FirebaseStorage } from 'firebase/storage'
 import Constants from 'expo-constants'
 
 type FirebaseConfig = {
@@ -46,7 +45,6 @@ export function getFirebaseApp(): FirebaseApp | null {
 export const firebaseApp = getFirebaseApp()
 export const auth: Auth | undefined = firebaseApp ? getAuth(firebaseApp) : undefined
 export const db: Firestore | undefined = firebaseApp ? getFirestore(firebaseApp) : undefined
-export const storage: FirebaseStorage | undefined = firebaseApp ? getStorage(firebaseApp) : undefined
 
 export function validateFirebaseConfig(): { ready: boolean; missing: string[]; config: FirebaseConfig | null } {
   const cfg = resolveConfig()
