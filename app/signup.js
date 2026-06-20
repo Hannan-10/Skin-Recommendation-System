@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons'; 
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import StatusModal from './components/StatusModal';
-import { registerUser } from '../firebase/user';
+import { registerUser, uploadProfileImage } from '../firebase/user';
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -13,11 +14,31 @@ export default function SignupScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [age, setAge] = useState('');
   const [gender, setGender] = useState(null);
+  const [profileImage, setProfileImage] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState('error');
   const [modalTitle, setModalTitle] = useState('');
   const [modalMessage, setModalMessage] = useState('');
   const [modalButton, setModalButton] = useState('OK');
+
+  const pickProfileImage = () => {
+    Alert.alert('Profile Photo', 'Choose an option', [
+      { text: 'Camera', onPress: async () => {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') return;
+        const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+        if (!result.canceled) setProfileImage(result.assets[0].uri);
+      }},
+      { text: 'Gallery', onPress: async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') return;
+        const result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+        if (!result.canceled) setProfileImage(result.assets[0].uri);
+      }},
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   const handleSignup = async () => {
     if (!name || !email || !password || !confirmPassword || !age || !gender) {
@@ -62,7 +83,11 @@ export default function SignupScreen() {
       return;
     }
     try {
+      setUploading(true);
       await registerUser({ name, email, password, age: ageNum, gender });
+      if (profileImage) {
+        await uploadProfileImage(profileImage).catch(() => {});
+      }
       setModalType('success');
       setModalTitle('Account Created');
       setModalMessage('Welcome to Skinalyst.');
@@ -80,6 +105,8 @@ export default function SignupScreen() {
       setModalMessage(msg);
       setModalButton('OK');
       setModalVisible(true);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -97,6 +124,21 @@ export default function SignupScreen() {
 
         <Text style={styles.title}>Join Skinalyst ✨</Text>
         <Text style={styles.subtitle}>Unlock your best skin ever</Text>
+
+        {/* PROFILE PHOTO PICKER */}
+        <TouchableOpacity style={styles.avatarPicker} onPress={pickProfileImage}>
+          {profileImage ? (
+            <Image source={{ uri: profileImage }} style={styles.avatarPreview} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Ionicons name="person" size={38} color="#E75480" />
+            </View>
+          )}
+          <View style={styles.avatarCamBadge}>
+            <Ionicons name="camera" size={14} color="#fff" />
+          </View>
+        </TouchableOpacity>
+        <Text style={styles.avatarHint}>Add profile photo (optional)</Text>
 
         <View style={styles.inputContainer}>
           {/* Full Name Input */}
@@ -179,8 +221,10 @@ export default function SignupScreen() {
         </View>
 
         {/* Register Button */}
-        <TouchableOpacity style={styles.button} onPress={handleSignup}>
-          <Text style={styles.buttonText}>Register Now</Text>
+        <TouchableOpacity style={[styles.button, uploading && { opacity: 0.7 }]} onPress={handleSignup} disabled={uploading}>
+          {uploading
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={styles.buttonText}>Register Now</Text>}
         </TouchableOpacity>
 
         {/* Footer Links */}
@@ -280,5 +324,20 @@ const styles = StyleSheet.create({
   linkText: { color: '#E75480', fontFamily: 'Nunito-Bold' },
   
   guestButton: { marginTop: 18, paddingVertical: 10 },
-  guestButtonText: { color: '#072360', fontSize: 16, textDecorationLine: 'underline', fontFamily: 'Nunito-SemiBold' }
+  guestButtonText: { color: '#072360', fontSize: 16, textDecorationLine: 'underline', fontFamily: 'Nunito-SemiBold' },
+
+  avatarPicker: { position: 'relative', marginBottom: 6 },
+  avatarPreview: { width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: '#E75480' },
+  avatarPlaceholder: {
+    width: 90, height: 90, borderRadius: 45,
+    backgroundColor: '#FFE3ED', borderWidth: 2, borderColor: '#E75480',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarCamBadge: {
+    position: 'absolute', bottom: 2, right: 2,
+    backgroundColor: '#E75480', width: 26, height: 26,
+    borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#FFF9F6',
+  },
+  avatarHint: { fontSize: 12, color: '#aaa', fontFamily: 'Nunito-Regular', marginBottom: 18 },
 });

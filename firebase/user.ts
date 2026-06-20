@@ -1,6 +1,25 @@
-import { auth, db } from './index'
+import { auth, db, storage } from './index'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, updateEmail, signOut } from 'firebase/auth'
 import { doc, setDoc, getDoc, getDocFromServer, updateDoc, serverTimestamp, collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+
+export async function uploadProfileImage(uri: string): Promise<string | null> {
+  if (!auth || !db || !storage) return null
+  const user = auth.currentUser
+  if (!user) return null
+  try {
+    const response = await fetch(uri)
+    const blob = await response.blob()
+    const storageRef = ref(storage, `profile_images/${user.uid}.jpg`)
+    await uploadBytes(storageRef, blob)
+    const url = await getDownloadURL(storageRef)
+    await updateDoc(doc(db, 'users', user.uid), { photoURL: url })
+    return url
+  } catch (e) {
+    console.warn('uploadProfileImage failed', e)
+    return null
+  }
+}
 
 export async function registerUser(params: { name: string; email: string; password: string; age: number; gender: string }) {
   const { name, email, password, age, gender } = params
