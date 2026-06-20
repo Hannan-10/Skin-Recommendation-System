@@ -15,7 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { signOutUser, getActiveRoutine, markRoutineChecked } from '../../../firebase/user';
+import { signOutUser, getActiveRoutine, markRoutineChecked, getCurrentUserProfile } from '../../../firebase/user';
 
 const { width } = Dimensions.get('window');
 
@@ -28,6 +28,7 @@ const Home = () => {
   const [activeSlide, setActiveSlide] = useState(0);
   const [routineModal, setRoutineModal] = useState(null); // { product, times }
   const [routineStep, setRoutineStep] = useState('ask'); // 'ask' | 'scan'
+  const [profilePhotoURL, setProfilePhotoURL] = useState(null);
 
   const scrollRef = useRef(null);
   const currentIndex = useRef(0);
@@ -75,6 +76,11 @@ const Home = () => {
     closeSide();
     router.replace(path);
   };
+
+  // Load profile photo
+  useEffect(() => {
+    getCurrentUserProfile().then(p => { if (p?.photoURL) setProfilePhotoURL(p.photoURL) }).catch(() => {});
+  }, []);
 
   // Routine check on home mount
   useEffect(() => {
@@ -232,9 +238,13 @@ const Home = () => {
           </View>
 
           <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/profile')}>
-            <View style={styles.profileBg}>
-              <Ionicons name="person-circle-outline" size={30} color="#E75480" />
-            </View>
+            {profilePhotoURL ? (
+              <Image source={{ uri: profilePhotoURL }} style={styles.profilePhoto} />
+            ) : (
+              <View style={styles.profileBg}>
+                <Ionicons name="person-circle-outline" size={30} color="#E75480" />
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -410,6 +420,7 @@ const styles = StyleSheet.create({
   heroSub: { marginLeft: 6, fontSize: 13, color: '#E75480', fontFamily: 'Nunito-SemiBold', letterSpacing: 0.3 },
   profileBtn: { padding: 6, marginLeft: 8 },
   profileBg: { backgroundColor: '#FFE3ED', borderRadius: 25, padding: 3 },
+  profilePhoto: { width: 38, height: 38, borderRadius: 19, borderWidth: 2, borderColor: '#E75480' },
 
   sliderContainer: { height: 190, marginTop: 12, width: '100%', borderRadius: 18, overflow: 'hidden', elevation: 2 },
   sliderImage: { width: width - 32, height: 190, resizeMode: 'cover', borderRadius: 18 },

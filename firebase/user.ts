@@ -2,6 +2,33 @@ import { auth, db } from './index'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, updateEmail, signOut } from 'firebase/auth'
 import { doc, setDoc, getDoc, getDocFromServer, updateDoc, serverTimestamp, collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore'
 
+const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY ?? ''
+
+export async function uploadProfileImage(uri: string): Promise<string | null> {
+  if (!auth || !db) return null
+  const user = auth.currentUser
+  if (!user) return null
+  try {
+    const formData = new FormData()
+    formData.append('key', IMGBB_API_KEY)
+    formData.append('image', { uri, type: 'image/jpeg', name: 'profile.jpg' } as any)
+
+    const res = await fetch('https://api.imgbb.com/1/upload', {
+      method: 'POST',
+      body: formData,
+    })
+    const json = await res.json()
+    const url = json.data?.url
+    if (!url) throw new Error('imgBB upload failed: ' + JSON.stringify(json))
+
+    await updateDoc(doc(db, 'users', user.uid), { photoURL: url })
+    return url
+  } catch (e) {
+    console.warn('uploadProfileImage failed', e)
+    return null
+  }
+}
+
 export async function registerUser(params: { name: string; email: string; password: string; age: number; gender: string }) {
   const { name, email, password, age, gender } = params
   if (!auth || !db) throw new Error('firebase_not_initialized')

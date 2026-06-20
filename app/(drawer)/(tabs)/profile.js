@@ -1,11 +1,11 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, SafeAreaView, ScrollView, Alert, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, SafeAreaView, ScrollView, Alert, Animated, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import { getCurrentUserProfile, signOutUser, getAllergyProfile } from '../../../firebase/user';
+import { getCurrentUserProfile, signOutUser, getAllergyProfile, uploadProfileImage } from '../../../firebase/user';
 import ScreenHeader from '../../components/ScreenHeader';
 
 function Skeleton({ width, height, borderRadius = 10, style }) {
@@ -26,6 +26,7 @@ function Skeleton({ width, height, borderRadius = 10, style }) {
 export default function Profile() {
   const router = useRouter();
   const [image, setImage] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [profile, setProfile] = useState(null);
   const [allergyProfile, setAllergyProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -46,13 +47,26 @@ export default function Profile() {
   const openCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return alert('Permission denied');
-    let result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.5 });
-    if (!result.canceled) setImage(result.assets[0].uri);
+    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+    if (!result.canceled) uploadAndSave(result.assets[0].uri);
   };
 
   const openGallery = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.5 });
-    if (!result.canceled) setImage(result.assets[0].uri);
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return alert('Permission denied');
+    const result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+    if (!result.canceled) uploadAndSave(result.assets[0].uri);
+  };
+
+  const uploadAndSave = async (uri) => {
+    setImage(uri); // show immediately
+    setUploadingPhoto(true);
+    try {
+      await uploadProfileImage(uri);
+    } catch {
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   useEffect(() => {
@@ -64,6 +78,7 @@ export default function Profile() {
         ]);
         setProfile(data);
         setAllergyProfile(allergy);
+        if (data?.photoURL) setImage(data.photoURL);
       } finally {
         setLoading(false);
       }
@@ -104,7 +119,7 @@ export default function Profile() {
           <>
             {/* Profile Image Section */}
             <View style={styles.imageSection}>
-              <TouchableOpacity onPress={pickImage} style={styles.avatarWrapper}>
+              <TouchableOpacity onPress={pickImage} style={styles.avatarWrapper} disabled={uploadingPhoto}>
                 {image ? (
                   <Image source={{ uri: image }} style={styles.avatar} />
                 ) : (
@@ -113,7 +128,9 @@ export default function Profile() {
                   </View>
                 )}
                 <View style={styles.camIcon}>
-                  <Ionicons name="camera" size={16} color="#fff" />
+                  {uploadingPhoto
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Ionicons name="camera" size={16} color="#fff" />}
                 </View>
               </TouchableOpacity>
               <Text style={styles.notLoggedIn}>{profile?.email || 'Guest User'}</Text>
