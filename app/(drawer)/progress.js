@@ -1,13 +1,13 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useFocusEffect } from '@react-navigation/native'
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView,
-  TouchableOpacity, ActivityIndicator,
+  TouchableOpacity, ActivityIndicator, Modal,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router'
-import { getActiveRoutine, clearActiveRoutine } from '../../firebase/user'
+import { getActiveRoutine, clearActiveRoutine, markRoutineChecked, switchToNextProduct } from '../../firebase/user'
 import PieChart from '../components/PieChart'
 
 const CONDITION_COLORS = {
@@ -18,6 +18,7 @@ const CONDITION_COLORS = {
   blackheads:   '#A78BFA',
 }
 const ALL_CONDITIONS = ['acne', 'wrinkles', 'pores', 'dark spots', 'blackheads']
+const NO_IMPROVEMENT_THRESHOLD = 3
 
 function pct(val) { return Math.round((val || 0) * 100) }
 
@@ -33,7 +34,6 @@ function daysSince(ts) {
   return Math.floor((Date.now() - ts.seconds * 1000) / 86400000)
 }
 
-// ── Comparison logic (frontend "API") ──────────────────────────────────────
 function compareScans(baseScan, currentScan) {
   const improvements = ALL_CONDITIONS.map(label => {
     const base    = baseScan?.conditions?.find(c => c.label === label)
@@ -41,14 +41,16 @@ function compareScans(baseScan, currentScan) {
     if (!base && !current) return null
     const basePct    = pct(base?.confidence    || 0)
     const currentPct = pct(current?.confidence || 0)
-    const delta = basePct - currentPct // positive = improved (condition went down)
+    const delta = basePct - currentPct
     return { label, basePct, currentPct, delta }
   }).filter(Boolean)
 
   const improvedCount     = improvements.filter(i => i.delta > 0).length
   const deterioratedCount = improvements.filter(i => i.delta < 0).length
+  // Count-based score: positive whenever more conditions improved than worsened,
+  // regardless of magnitude (avoids 3 small gains cancelling 2 large losses → "0%")
   const overallDelta      = improvements.length
-    ? Math.round(improvements.reduce((s, i) => s + i.delta, 0) / improvements.length)
+    ? Math.round(((improvedCount - deterioratedCount) / improvements.length) * 100)
     : 0
 
   return { improvements, improvedCount, deterioratedCount, overallDelta }
@@ -58,27 +60,45 @@ export default function Progress() {
   const router = useRouter()
   const { freshScan: freshScanStr } = useLocalSearchParams()
 
-  // Parse fresh scan data passed from skinresult after a scan
   const freshScan = freshScanStr
     ? (() => { try { return JSON.parse(freshScanStr) } catch { return null } })()
     : null
 
-  const [loading, setLoading] = useState(true)
-  const [routine, setRoutine] = useState(null)
+  const [loading, setLoading]     = useState(true)
+  const [routine, setRoutine]     = useState(null)
+  const [switching, setSwitching]         = useState(false)
+  const [switched, setSwitched]           = useState(null) // { name, brand } of new product
+  const [switchModalVisible, setSwitchModalVisible] = useState(false)
+
+  // Prevent marking the same scan twice
+  const markedRef = useRef(false)
+
+  const loadRoutine = useCallback(async () => {
+    const r = await getActiveRoutine().catch(() => null)
+    setRoutine(r)
+    return r
+  }, [])
 
   useFocusEffect(
     useCallback(() => {
       setLoading(true)
-      ;(async () => {
-        try {
-          const r = await getActiveRoutine().catch(() => null)
-          setRoutine(r)
-        } finally {
-          setLoading(false)
-        }
-      })()
+      loadRoutine().finally(() => setLoading(false))
     }, [])
   )
+
+  // After fresh scan: mark check (once), then reload so noImprovementCount is current
+  useEffect(() => {
+    if (!freshScan || !routine || markedRef.current) return
+    const base = routine.baseScan
+    const hasComp = !!(base && (freshScan.savedAt || 0) > (base.savedAt || 0))
+    if (!hasComp) return
+    markedRef.current = true
+    const { overallDelta } = compareScans(base, freshScan)
+    ;(async () => {
+      await markRoutineChecked(overallDelta <= 0).catch(() => {})
+      await loadRoutine()
+    })()
+  }, [routine, freshScan])
 
   const goHome = () => router.replace('/(drawer)/(tabs)/home')
 
@@ -117,12 +137,9 @@ export default function Progress() {
     )
   }
 
-  // currentScan = fresh scan passed directly from skinresult (preferred)
-  //             OR saved latestProgressScan from Firebase (when viewing later)
   const baseScan    = routine.baseScan
   const currentScan = freshScan || routine.latestProgressScan || null
 
-  // Show comparison only when current scan is newer than baseline
   const hasComparison = !!(
     baseScan && currentScan &&
     (currentScan.savedAt || 0) > (baseScan.savedAt || 0)
@@ -131,12 +148,143 @@ export default function Progress() {
   const { improvements, improvedCount, deterioratedCount, overallDelta } =
     hasComparison ? compareScans(baseScan, currentScan) : { improvements: [], improvedCount: 0, deterioratedCount: 0, overallDelta: 0 }
 
-  const noImprovement = routine.noImprovementCount >= 2
   const suggestSwitch = hasComparison && overallDelta < 0 && deterioratedCount > improvedCount
+
+  // Next product logic
+  const allProducts     = routine.allProducts || []
+  const nextProductIdx  = (routine.productIndex || 0) + 1
+  const nextProduct     = allProducts[nextProductIdx] || null
+  const noProgressCount = routine.noImprovementCount || 0
+  const hitThreshold    = noProgressCount >= NO_IMPROVEMENT_THRESHOLD
+
+  const handleSwitchProduct = () => setSwitchModalVisible(true)
+
+  const confirmSwitch = async () => {
+    setSwitching(true)
+    try {
+      const scan = currentScan || baseScan
+      const result = await switchToNextProduct({
+        skinType: scan?.skinType || '',
+        conditions: scan?.conditions || [],
+        savedAt: scan?.savedAt || Date.now(),
+      })
+      setSwitchModalVisible(false)
+      if (result.success) {
+        setSwitched({ name: result.nextProduct?.name, brand: result.nextProduct?.brand })
+        await loadRoutine()
+      }
+    } finally {
+      setSwitching(false)
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
+
+      {/* ── Switch Product Modal ── */}
+      <Modal visible={switchModalVisible} transparent animationType="fade" onRequestClose={() => setSwitchModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+
+            {/* Header */}
+            <LinearGradient colors={['#E75480', '#FF6B9D']} style={styles.modalHeader}>
+              <View style={styles.modalHeaderIcon}>
+                <Ionicons name="swap-horizontal" size={26} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalHeaderTitle}>Switch Product?</Text>
+                <Text style={styles.modalHeaderSub}>No improvement after {NO_IMPROVEMENT_THRESHOLD} scans</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSwitchModalVisible(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
+              </TouchableOpacity>
+            </LinearGradient>
+
+            <View style={styles.modalBody}>
+
+              {/* Current product */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionLabel}>CURRENT PRODUCT</Text>
+                <View style={styles.modalProductRow}>
+                  <View style={[styles.modalProductDot, { backgroundColor: '#FFE3ED' }]}>
+                    <Ionicons name="close-circle" size={16} color="#E75480" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.modalProductName}>{routine.product?.name}</Text>
+                    <Text style={styles.modalProductBrand}>{routine.product?.brand}</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.modalArrowRow}>
+                <View style={styles.modalDivider} />
+                <View style={styles.modalArrowCircle}>
+                  <Ionicons name="arrow-down" size={14} color="#E75480" />
+                </View>
+                <View style={styles.modalDivider} />
+              </View>
+
+              {/* Next product */}
+              {nextProduct ? (
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionLabel}>SWITCH TO</Text>
+                  <View style={[styles.modalProductRow, styles.modalProductRowNext]}>
+                    <View style={[styles.modalProductDot, { backgroundColor: '#E3F9F0' }]}>
+                      <Ionicons name="checkmark-circle" size={16} color="#00C896" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.modalProductName}>{nextProduct.name}</Text>
+                      <Text style={styles.modalProductBrand}>{nextProduct.brand}</Text>
+                    </View>
+                    <View style={styles.modalMatchBadge}>
+                      <Text style={styles.modalMatchNum}>{nextProduct.match_pct || '--'}%</Text>
+                      <Text style={styles.modalMatchLabel}>match</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.modalNote}>
+                    Your most recent scan will become the new baseline for this product.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalNoMore}>
+                    You've tried all our recommended products. Consider consulting a dermatologist for personalised advice.
+                  </Text>
+                </View>
+              )}
+
+              {/* Buttons */}
+              <View style={styles.modalBtns}>
+                {nextProduct && (
+                  <TouchableOpacity
+                    style={[styles.modalSwitchBtn, switching && { opacity: 0.6 }]}
+                    onPress={confirmSwitch}
+                    disabled={switching}
+                  >
+                    {switching
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <>
+                          <Ionicons name="swap-horizontal-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
+                          <Text style={styles.modalSwitchBtnText}>Switch Now</Text>
+                        </>}
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setSwitchModalVisible(false)}
+                  disabled={switching}
+                >
+                  <Text style={styles.modalCancelBtnText}>
+                    {nextProduct ? 'Keep Going' : 'Close'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.topNav}>
         <TouchableOpacity style={styles.backBtn} onPress={goHome}>
@@ -149,6 +297,23 @@ export default function Progress() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+
+        {/* ── Switched product success banner ── */}
+        {switched && (
+          <LinearGradient colors={['#00C896', '#00A87A']} style={styles.switchedBanner}>
+            <Ionicons name="checkmark-circle" size={22} color="#fff" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.switchedBannerTitle}>Product Switched!</Text>
+              <Text style={styles.switchedBannerSub}>
+                Now tracking with {switched.name}
+                {switched.brand ? ` by ${switched.brand}` : ''}.
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setSwitched(null)}>
+              <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
+          </LinearGradient>
+        )}
 
         {/* ── Active routine banner ── */}
         <LinearGradient colors={['#E75480', '#FF6B9D']} style={styles.routineBanner}>
@@ -173,44 +338,84 @@ export default function Progress() {
           </View>
         </LinearGradient>
 
-        {/* ── Scan button ── */}
-        <TouchableOpacity
-          style={styles.scanProgressBtn}
-          onPress={() => router.push('/skinresult?routineCheck=true')}
-        >
-          <Ionicons name="scan-outline" size={18} color="#E75480" />
-          <Text style={styles.scanProgressBtnText}>Scan Skin to Check Progress</Text>
-          <Ionicons name="chevron-forward" size={16} color="#E75480" />
-        </TouchableOpacity>
+        {/* ── Scan button — hidden once threshold reached ── */}
+        {!hitThreshold && (
+          <TouchableOpacity
+            style={styles.scanProgressBtn}
+            onPress={() => router.push('/skinresult?routineCheck=true')}
+          >
+            <Ionicons name="scan-outline" size={18} color="#E75480" />
+            <Text style={styles.scanProgressBtnText}>Scan Skin to Check Progress</Text>
+            <Ionicons name="chevron-forward" size={16} color="#E75480" />
+          </TouchableOpacity>
+        )}
 
-        {/* ── Product switch warning ── */}
-        {(noImprovement || suggestSwitch) && (
+        {/* ── 3-scan no-progress → switch product card ── */}
+        {hitThreshold && (
+          <View style={styles.switchCard}>
+            <LinearGradient colors={['#E75480', '#FF6B9D']} style={styles.switchCardHeader}>
+              <Ionicons name="swap-horizontal" size={18} color="#fff" />
+              <Text style={styles.switchCardHeaderText}>Time to Try Something New</Text>
+            </LinearGradient>
+            <View style={styles.switchCardBody}>
+              <Text style={styles.switchCardDesc}>
+                After {noProgressCount} scans, no improvement was detected with{' '}
+                <Text style={{ fontFamily: 'Nunito-Bold' }}>{routine.product?.name}</Text>.
+              </Text>
+              {nextProduct ? (
+                <>
+                  <View style={styles.nextProductRow}>
+                    <View style={styles.nextProductIcon}>
+                      <Ionicons name="sparkles-outline" size={18} color="#E75480" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.nextProductLabel}>Next Recommended</Text>
+                      <Text style={styles.nextProductName}>{nextProduct.name}</Text>
+                      <Text style={styles.nextProductBrand}>{nextProduct.brand}</Text>
+                    </View>
+                    <View style={styles.nextMatchBadge}>
+                      <Text style={styles.nextMatchNum}>{nextProduct.match_pct || '--'}%</Text>
+                      <Text style={styles.nextMatchLabel}>match</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.switchNowBtn, switching && { opacity: 0.6 }]}
+                    onPress={handleSwitchProduct}
+                    disabled={switching}
+                  >
+                    {switching
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <>
+                          <Ionicons name="swap-horizontal-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+                          <Text style={styles.switchNowBtnText}>Switch to This Product</Text>
+                        </>}
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <Text style={styles.noMoreProducts}>
+                  You've tried all recommended products. Consider consulting a dermatologist.
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* ── Immediate deterioration warning (single bad scan) ── */}
+        {!hitThreshold && suggestSwitch && (
           <View style={styles.warningCard}>
             <Ionicons name="warning-outline" size={20} color="#E67E22" />
             <View style={{ flex: 1 }}>
-              <Text style={styles.warningTitle}>
-                {suggestSwitch ? 'Skin conditions worsening' : 'No visible improvement detected'}
-              </Text>
+              <Text style={styles.warningTitle}>Skin conditions worsening</Text>
               <Text style={styles.warningSub}>
-                Consider trying product #{(routine.productIndex || 0) + 2} from your recommendations.
+                Keep scanning — if no improvement after {NO_IMPROVEMENT_THRESHOLD} scans, we'll suggest a switch.
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.switchBtn}
-              onPress={async () => {
-                await clearActiveRoutine().catch(() => {})
-                router.replace('/(drawer)/(tabs)/recs')
-              }}
-            >
-              <Text style={styles.switchBtnText}>Switch</Text>
-            </TouchableOpacity>
           </View>
         )}
 
         {/* ── Comparison results ── */}
         {hasComparison ? (
           <>
-            {/* Overall score */}
             <View style={styles.scoreCard}>
               <View style={styles.scoreCardLeft}>
                 <Text style={styles.scoreLabel}>Overall Skin Change</Text>
@@ -235,7 +440,6 @@ export default function Progress() {
               />
             </View>
 
-            {/* Before / After pie charts */}
             <View style={styles.piesBlock}>
               <Text style={styles.blockTitle}>Skin Condition Comparison</Text>
               <View style={styles.piesRow}>
@@ -251,7 +455,6 @@ export default function Progress() {
               </View>
             </View>
 
-            {/* Per-condition breakdown */}
             <View style={styles.breakdownBlock}>
               <Text style={styles.blockTitle}>Condition Breakdown</Text>
               {improvements.map(item => (
@@ -261,7 +464,6 @@ export default function Progress() {
                     {item.label.charAt(0).toUpperCase() + item.label.slice(1)}
                   </Text>
                   <View style={styles.condBarsWrap}>
-                    {/* Before bar */}
                     <View style={styles.condBarRow}>
                       <Text style={styles.condBarTag}>Before</Text>
                       <View style={styles.condBarBg}>
@@ -272,7 +474,6 @@ export default function Progress() {
                       </View>
                       <Text style={styles.condBarPct}>{item.basePct}%</Text>
                     </View>
-                    {/* After bar */}
                     <View style={styles.condBarRow}>
                       <Text style={styles.condBarTag}>After</Text>
                       <View style={styles.condBarBg}>
@@ -293,7 +494,6 @@ export default function Progress() {
                 </View>
               ))}
 
-              {/* Legend */}
               <View style={styles.legendInline}>
                 <View style={styles.legendInlineItem}>
                   <View style={[styles.legendInlineSwatch, { opacity: 0.4, backgroundColor: '#E75480' }]} />
@@ -307,7 +507,6 @@ export default function Progress() {
             </View>
           </>
         ) : (
-          /* ── No comparison yet ── */
           <View style={styles.noDataCard}>
             <Ionicons name="scan-outline" size={40} color="#ddd" />
             {baseScan ? (
@@ -329,6 +528,16 @@ export default function Progress() {
               <Ionicons name="camera-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
               <Text style={styles.scanNowBtnText}>{baseScan ? 'Scan for Comparison' : 'Scan Now'}</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── Scan count indicator ── */}
+        {noProgressCount > 0 && (
+          <View style={styles.scanCountRow}>
+            <Ionicons name="alert-circle-outline" size={14} color="#E67E22" />
+            <Text style={styles.scanCountText}>
+              {noProgressCount}/{NO_IMPROVEMENT_THRESHOLD} scans with no improvement detected
+            </Text>
           </View>
         )}
 
@@ -377,6 +586,13 @@ const styles = StyleSheet.create({
   },
   goRecsBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 15 },
 
+  switchedBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderRadius: 14, padding: 14, marginBottom: 14,
+  },
+  switchedBannerTitle: { fontSize: 14, fontFamily: 'Nunito-Bold', color: '#fff' },
+  switchedBannerSub: { fontSize: 12, fontFamily: 'Nunito-Regular', color: 'rgba(255,255,255,0.9)', marginTop: 1 },
+
   routineBanner: {
     borderRadius: 18, padding: 18, flexDirection: 'row',
     alignItems: 'center', marginBottom: 14,
@@ -403,6 +619,41 @@ const styles = StyleSheet.create({
     flex: 1, fontSize: 14, fontFamily: 'Nunito-SemiBold', color: '#E75480',
   },
 
+  // Switch product card
+  switchCard: {
+    borderRadius: 16, overflow: 'hidden', marginBottom: 14,
+    elevation: 3, shadowColor: '#E75480', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+  },
+  switchCardHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  switchCardHeaderText: { fontSize: 14, fontFamily: 'Nunito-Bold', color: '#fff' },
+  switchCardBody: { backgroundColor: '#fff', padding: 14, gap: 12 },
+  switchCardDesc: { fontSize: 13, fontFamily: 'Nunito-Regular', color: '#555', lineHeight: 18 },
+  nextProductRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FFF0F3', borderRadius: 12, padding: 12,
+  },
+  nextProductIcon: {
+    width: 40, height: 40, borderRadius: 12, backgroundColor: '#FFE3ED',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  nextProductLabel: { fontSize: 10, fontFamily: 'Nunito-SemiBold', color: '#aaa', textTransform: 'uppercase', marginBottom: 2 },
+  nextProductName: { fontSize: 14, fontFamily: 'Nunito-Bold', color: '#1A1A1A' },
+  nextProductBrand: { fontSize: 12, fontFamily: 'Nunito-Regular', color: '#888' },
+  nextMatchBadge: { alignItems: 'center' },
+  nextMatchNum: { fontSize: 18, fontFamily: 'Nunito-ExtraBold', color: '#00C896' },
+  nextMatchLabel: { fontSize: 9, fontFamily: 'Nunito-Regular', color: '#888' },
+  switchNowBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#E75480', paddingVertical: 12, borderRadius: 12,
+    elevation: 2,
+  },
+  switchNowBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 14 },
+  noMoreProducts: { fontSize: 13, fontFamily: 'Nunito-Regular', color: '#888', textAlign: 'center', lineHeight: 18 },
+
+  // Warning card (immediate bad scan, not yet threshold)
   warningCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: '#FFF4E6', borderRadius: 14, padding: 14, marginBottom: 14,
@@ -410,10 +661,6 @@ const styles = StyleSheet.create({
   },
   warningTitle: { fontSize: 14, fontFamily: 'Nunito-Bold', color: '#E67E22' },
   warningSub: { fontSize: 12, fontFamily: 'Nunito-Regular', color: '#888', marginTop: 2 },
-  switchBtn: {
-    backgroundColor: '#E67E22', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10,
-  },
-  switchBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 13 },
 
   scoreCard: {
     backgroundColor: '#fff', borderRadius: 18, padding: 18,
@@ -470,10 +717,86 @@ const styles = StyleSheet.create({
   },
   scanNowBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 14 },
 
+  scanCountRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#FFF4E6', borderRadius: 10, padding: 10, marginBottom: 12,
+  },
+  scanCountText: { fontSize: 12, fontFamily: 'Nunito-SemiBold', color: '#E67E22' },
+
   legendBlock: { backgroundColor: '#FFF0F3', borderRadius: 14, padding: 14, marginBottom: 10 },
   legendTitle: { fontSize: 13, fontFamily: 'Nunito-Bold', color: '#330033', marginBottom: 8 },
   legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   legendItem: { flexDirection: 'row', alignItems: 'center' },
   legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 5 },
   legendText: { fontSize: 12, fontFamily: 'Nunito-Regular', color: '#888' },
+
+  // ── Switch Product Modal ──
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  modalCard: {
+    width: '100%', backgroundColor: '#fff', borderRadius: 24,
+    overflow: 'hidden', elevation: 12,
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 18, paddingVertical: 16,
+  },
+  modalHeaderIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalHeaderTitle: { fontSize: 17, fontFamily: 'Nunito-ExtraBold', color: '#fff' },
+  modalHeaderSub: { fontSize: 12, fontFamily: 'Nunito-Regular', color: 'rgba(255,255,255,0.85)', marginTop: 1 },
+  modalCloseBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalBody: { padding: 18, gap: 4 },
+  modalSection: { gap: 8 },
+  modalSectionLabel: {
+    fontSize: 10, fontFamily: 'Nunito-Bold', color: '#aaa',
+    letterSpacing: 1, textTransform: 'uppercase',
+  },
+  modalProductRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#FFF9F6', borderRadius: 14, padding: 12,
+  },
+  modalProductRowNext: { backgroundColor: '#F0FBF7' },
+  modalProductDot: {
+    width: 36, height: 36, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalProductName: { fontSize: 14, fontFamily: 'Nunito-Bold', color: '#1A1A1A' },
+  modalProductBrand: { fontSize: 12, fontFamily: 'Nunito-Regular', color: '#888', marginTop: 1 },
+  modalMatchBadge: { alignItems: 'center' },
+  modalMatchNum: { fontSize: 18, fontFamily: 'Nunito-ExtraBold', color: '#00C896' },
+  modalMatchLabel: { fontSize: 9, fontFamily: 'Nunito-Regular', color: '#aaa' },
+  modalArrowRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  modalDivider: { flex: 1, height: 1, backgroundColor: '#F0F0F0' },
+  modalArrowCircle: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: '#FFE3ED', alignItems: 'center', justifyContent: 'center',
+  },
+  modalNote: {
+    fontSize: 12, fontFamily: 'Nunito-Regular', color: '#888',
+    lineHeight: 17, paddingHorizontal: 2,
+  },
+  modalNoMore: {
+    fontSize: 13, fontFamily: 'Nunito-Regular', color: '#888',
+    textAlign: 'center', lineHeight: 19, paddingVertical: 8,
+  },
+  modalBtns: { gap: 10, marginTop: 10 },
+  modalSwitchBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#E75480', paddingVertical: 14, borderRadius: 14,
+    elevation: 3, shadowColor: '#E75480', shadowOpacity: 0.3, shadowRadius: 8,
+  },
+  modalSwitchBtnText: { fontSize: 16, fontFamily: 'Nunito-Bold', color: '#fff' },
+  modalCancelBtn: { alignItems: 'center', paddingVertical: 12 },
+  modalCancelBtnText: { fontSize: 15, fontFamily: 'Nunito-SemiBold', color: '#aaa' },
 })

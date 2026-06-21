@@ -152,14 +152,14 @@ export default function SkinResult() {
         );
       }
 
-      // For routine check: capture data and save progress scan
+      // For routine check: await Firebase write first, then enable the button.
+      // This ensures progress screen always reads fresh data with no stale-cache flash.
       if (isRoutineCheck && finalType && finalConds.length > 0) {
-        const captured = { skinType: finalType, conditions: finalConds, savedAt: Date.now() };
-        console.log('[runBoth] setting freshScanData, savedAt:', captured.savedAt);
-        setFreshScanData(JSON.stringify(captured));
-        saveRoutineProgressScan({ skinType: finalType, conditions: finalConds }).catch(e =>
+        await saveRoutineProgressScan({ skinType: finalType, conditions: finalConds }).catch(e =>
           console.warn('[runBoth] saveRoutineProgressScan failed:', e)
         );
+        const captured = { skinType: finalType, conditions: finalConds, savedAt: Date.now() };
+        setFreshScanData(JSON.stringify(captured));
       }
 
       setSaved(false);

@@ -124,6 +124,7 @@ export async function saveActiveRoutine(params: {
   product: { name: string; brand: string; type: string; category: string }
   routineTimes: string[]
   baseScan: { skinType: string; conditions: { label: string; confidence: number }[]; savedAt: number } | null
+  allProducts?: any[]
 }) {
   if (!auth || !db) return
   const user = auth.currentUser
@@ -197,7 +198,7 @@ export async function getActiveRoutine(): Promise<{
   if (!user) return null
   const ref = doc(db, 'users', user.uid)
   try {
-    const snap = await getDoc(ref)
+    const snap = await getDocFromServer(ref)
     if (!snap.exists()) return null
     return snap.data().activeRoutine || null
   } catch {
@@ -211,7 +212,7 @@ export async function markRoutineChecked(noImprovement: boolean) {
   if (!user) return
   const ref = doc(db, 'users', user.uid)
   try {
-    const snap = await getDoc(ref)
+    const snap = await getDocFromServer(ref)
     const current = snap.data()?.activeRoutine || {}
     await updateDoc(ref, {
       'activeRoutine.lastCheckedAt': serverTimestamp(),
@@ -221,6 +222,43 @@ export async function markRoutineChecked(noImprovement: boolean) {
     })
   } catch (e) {
     console.warn('markRoutineChecked failed', e)
+  }
+}
+
+export async function switchToNextProduct(currentScan: {
+  skinType: string
+  conditions: { label: string; confidence: number }[]
+  savedAt: number
+}): Promise<{ success: boolean; nextProduct?: any }> {
+  if (!auth || !db) return { success: false }
+  const user = auth.currentUser
+  if (!user) return { success: false }
+  const docRef = doc(db, 'users', user.uid)
+  try {
+    const snap = await getDocFromServer(docRef)
+    const routine = snap.data()?.activeRoutine
+    if (!routine) return { success: false }
+    const allProducts: any[] = routine.allProducts || []
+    const nextIndex = (routine.productIndex || 0) + 1
+    if (nextIndex >= allProducts.length) return { success: false }
+    const np = allProducts[nextIndex]
+    await updateDoc(docRef, {
+      'activeRoutine.productIndex': nextIndex,
+      'activeRoutine.product': {
+        name: np.name || '',
+        brand: np.brand || '',
+        type: np.type || '',
+        category: np._category || '',
+      },
+      'activeRoutine.baseScan': { ...currentScan, savedAt: Date.now() },
+      'activeRoutine.latestProgressScan': null,
+      'activeRoutine.noImprovementCount': 0,
+      'activeRoutine.startedAt': serverTimestamp(),
+    })
+    return { success: true, nextProduct: np }
+  } catch (e) {
+    console.warn('switchToNextProduct failed', e)
+    return { success: false }
   }
 }
 

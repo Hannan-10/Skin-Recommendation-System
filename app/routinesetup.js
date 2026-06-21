@@ -32,6 +32,7 @@ export default function RoutineSetup() {
 
   const product = params.product ? JSON.parse(params.product) : null;
   const productIndex = parseInt(params.productIndex || '0', 10);
+  const allProducts = params.allProducts ? (() => { try { return JSON.parse(params.allProducts) } catch { return [] } })() : [];
 
   const [morningTime, setMorningTime] = useState('08:00');
   const [eveningTime, setEveningTime] = useState('21:00');
@@ -80,6 +81,7 @@ export default function RoutineSetup() {
             ? baseScan.scannedAt.seconds * 1000
             : Date.now(),
         } : null,
+        allProducts,
       });
     } catch (e) {
       // Non-fatal
