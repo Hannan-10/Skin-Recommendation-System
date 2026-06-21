@@ -47,8 +47,10 @@ function compareScans(baseScan, currentScan) {
 
   const improvedCount     = improvements.filter(i => i.delta > 0).length
   const deterioratedCount = improvements.filter(i => i.delta < 0).length
+  // Count-based score: positive whenever more conditions improved than worsened,
+  // regardless of magnitude (avoids 3 small gains cancelling 2 large losses → "0%")
   const overallDelta      = improvements.length
-    ? Math.round(improvements.reduce((s, i) => s + i.delta, 0) / improvements.length)
+    ? Math.round(((improvedCount - deterioratedCount) / improvements.length) * 100)
     : 0
 
   return { improvements, improvedCount, deterioratedCount, overallDelta }
