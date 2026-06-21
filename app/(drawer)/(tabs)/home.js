@@ -29,6 +29,7 @@ const Home = () => {
   const [routineModal, setRoutineModal] = useState(null); // { product, times }
   const [routineStep, setRoutineStep] = useState('ask'); // 'ask' | 'scan'
   const [profilePhotoURL, setProfilePhotoURL] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
 
   const scrollRef = useRef(null);
   const currentIndex = useRef(0);
@@ -79,7 +80,10 @@ const Home = () => {
 
   // Load profile photo
   useEffect(() => {
-    getCurrentUserProfile().then(p => { if (p?.photoURL) setProfilePhotoURL(p.photoURL) }).catch(() => {});
+    getCurrentUserProfile()
+      .then(p => { if (p?.photoURL) setProfilePhotoURL(p.photoURL) })
+      .catch(() => {})
+      .finally(() => setProfileLoading(false));
   }, []);
 
   // Routine check on home mount
@@ -240,6 +244,8 @@ const Home = () => {
           <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/profile')}>
             {profilePhotoURL ? (
               <Image source={{ uri: profilePhotoURL }} style={styles.profilePhoto} />
+            ) : profileLoading ? (
+              <View style={styles.profileBg} />
             ) : (
               <View style={styles.profileBg}>
                 <Ionicons name="person-circle-outline" size={30} color="#E75480" />
