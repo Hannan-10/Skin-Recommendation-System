@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useFocusEffect } from '@react-navigation/native'
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView,
-  TouchableOpacity, ActivityIndicator, Alert, Modal,
+  TouchableOpacity, ActivityIndicator, Modal,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -64,8 +64,9 @@ export default function Progress() {
 
   const [loading, setLoading]     = useState(true)
   const [routine, setRoutine]     = useState(null)
-  const [switching, setSwitching] = useState(false)
-  const [switched, setSwitched]   = useState(null) // { name, brand } of new product
+  const [switching, setSwitching]         = useState(false)
+  const [switched, setSwitched]           = useState(null) // { name, brand } of new product
+  const [switchModalVisible, setSwitchModalVisible] = useState(false)
 
   // Prevent marking the same scan twice
   const markedRef = useRef(false)
@@ -154,50 +155,134 @@ export default function Progress() {
   const noProgressCount = routine.noImprovementCount || 0
   const hitThreshold    = noProgressCount >= NO_IMPROVEMENT_THRESHOLD
 
-  const handleSwitchProduct = () => {
-    if (!nextProduct) {
-      Alert.alert(
-        'All Products Tried',
-        'You have tried all recommended products. Consider consulting a dermatologist for personalised advice.',
-        [{ text: 'OK' }]
-      )
-      return
+  const handleSwitchProduct = () => setSwitchModalVisible(true)
+
+  const confirmSwitch = async () => {
+    setSwitching(true)
+    try {
+      const scan = currentScan || baseScan
+      const result = await switchToNextProduct({
+        skinType: scan?.skinType || '',
+        conditions: scan?.conditions || [],
+        savedAt: scan?.savedAt || Date.now(),
+      })
+      setSwitchModalVisible(false)
+      if (result.success) {
+        setSwitched({ name: result.nextProduct?.name, brand: result.nextProduct?.brand })
+        await loadRoutine()
+      }
+    } finally {
+      setSwitching(false)
     }
-    Alert.alert(
-      'Switch Product?',
-      `Switch to "${nextProduct.name}" by ${nextProduct.brand || 'Unknown'}?\n\nYour current scan will become the new baseline.`,
-      [
-        { text: 'Keep Going', style: 'cancel' },
-        {
-          text: 'Switch Now',
-          style: 'destructive',
-          onPress: async () => {
-            setSwitching(true)
-            try {
-              const scan = currentScan || baseScan
-              const result = await switchToNextProduct({
-                skinType: scan?.skinType || '',
-                conditions: scan?.conditions || [],
-                savedAt: scan?.savedAt || Date.now(),
-              })
-              if (result.success) {
-                setSwitched({ name: result.nextProduct?.name, brand: result.nextProduct?.brand })
-                await loadRoutine()
-              } else {
-                Alert.alert('Switch Failed', 'Could not switch product. Please try again.')
-              }
-            } finally {
-              setSwitching(false)
-            }
-          },
-        },
-      ]
-    )
   }
 
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
+
+      {/* ── Switch Product Modal ── */}
+      <Modal visible={switchModalVisible} transparent animationType="fade" onRequestClose={() => setSwitchModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+
+            {/* Header */}
+            <LinearGradient colors={['#E75480', '#FF6B9D']} style={styles.modalHeader}>
+              <View style={styles.modalHeaderIcon}>
+                <Ionicons name="swap-horizontal" size={26} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalHeaderTitle}>Switch Product?</Text>
+                <Text style={styles.modalHeaderSub}>No improvement after {NO_IMPROVEMENT_THRESHOLD} scans</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSwitchModalVisible(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
+              </TouchableOpacity>
+            </LinearGradient>
+
+            <View style={styles.modalBody}>
+
+              {/* Current product */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionLabel}>CURRENT PRODUCT</Text>
+                <View style={styles.modalProductRow}>
+                  <View style={[styles.modalProductDot, { backgroundColor: '#FFE3ED' }]}>
+                    <Ionicons name="close-circle" size={16} color="#E75480" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.modalProductName}>{routine.product?.name}</Text>
+                    <Text style={styles.modalProductBrand}>{routine.product?.brand}</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.modalArrowRow}>
+                <View style={styles.modalDivider} />
+                <View style={styles.modalArrowCircle}>
+                  <Ionicons name="arrow-down" size={14} color="#E75480" />
+                </View>
+                <View style={styles.modalDivider} />
+              </View>
+
+              {/* Next product */}
+              {nextProduct ? (
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionLabel}>SWITCH TO</Text>
+                  <View style={[styles.modalProductRow, styles.modalProductRowNext]}>
+                    <View style={[styles.modalProductDot, { backgroundColor: '#E3F9F0' }]}>
+                      <Ionicons name="checkmark-circle" size={16} color="#00C896" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.modalProductName}>{nextProduct.name}</Text>
+                      <Text style={styles.modalProductBrand}>{nextProduct.brand}</Text>
+                    </View>
+                    <View style={styles.modalMatchBadge}>
+                      <Text style={styles.modalMatchNum}>{nextProduct.match_pct || '--'}%</Text>
+                      <Text style={styles.modalMatchLabel}>match</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.modalNote}>
+                    Your most recent scan will become the new baseline for this product.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalNoMore}>
+                    You've tried all our recommended products. Consider consulting a dermatologist for personalised advice.
+                  </Text>
+                </View>
+              )}
+
+              {/* Buttons */}
+              <View style={styles.modalBtns}>
+                {nextProduct && (
+                  <TouchableOpacity
+                    style={[styles.modalSwitchBtn, switching && { opacity: 0.6 }]}
+                    onPress={confirmSwitch}
+                    disabled={switching}
+                  >
+                    {switching
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <>
+                          <Ionicons name="swap-horizontal-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
+                          <Text style={styles.modalSwitchBtnText}>Switch Now</Text>
+                        </>}
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setSwitchModalVisible(false)}
+                  disabled={switching}
+                >
+                  <Text style={styles.modalCancelBtnText}>
+                    {nextProduct ? 'Keep Going' : 'Close'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.topNav}>
         <TouchableOpacity style={styles.backBtn} onPress={goHome}>
@@ -642,4 +727,74 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center' },
   legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 5 },
   legendText: { fontSize: 12, fontFamily: 'Nunito-Regular', color: '#888' },
+
+  // ── Switch Product Modal ──
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  modalCard: {
+    width: '100%', backgroundColor: '#fff', borderRadius: 24,
+    overflow: 'hidden', elevation: 12,
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 18, paddingVertical: 16,
+  },
+  modalHeaderIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalHeaderTitle: { fontSize: 17, fontFamily: 'Nunito-ExtraBold', color: '#fff' },
+  modalHeaderSub: { fontSize: 12, fontFamily: 'Nunito-Regular', color: 'rgba(255,255,255,0.85)', marginTop: 1 },
+  modalCloseBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalBody: { padding: 18, gap: 4 },
+  modalSection: { gap: 8 },
+  modalSectionLabel: {
+    fontSize: 10, fontFamily: 'Nunito-Bold', color: '#aaa',
+    letterSpacing: 1, textTransform: 'uppercase',
+  },
+  modalProductRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#FFF9F6', borderRadius: 14, padding: 12,
+  },
+  modalProductRowNext: { backgroundColor: '#F0FBF7' },
+  modalProductDot: {
+    width: 36, height: 36, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalProductName: { fontSize: 14, fontFamily: 'Nunito-Bold', color: '#1A1A1A' },
+  modalProductBrand: { fontSize: 12, fontFamily: 'Nunito-Regular', color: '#888', marginTop: 1 },
+  modalMatchBadge: { alignItems: 'center' },
+  modalMatchNum: { fontSize: 18, fontFamily: 'Nunito-ExtraBold', color: '#00C896' },
+  modalMatchLabel: { fontSize: 9, fontFamily: 'Nunito-Regular', color: '#aaa' },
+  modalArrowRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  modalDivider: { flex: 1, height: 1, backgroundColor: '#F0F0F0' },
+  modalArrowCircle: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: '#FFE3ED', alignItems: 'center', justifyContent: 'center',
+  },
+  modalNote: {
+    fontSize: 12, fontFamily: 'Nunito-Regular', color: '#888',
+    lineHeight: 17, paddingHorizontal: 2,
+  },
+  modalNoMore: {
+    fontSize: 13, fontFamily: 'Nunito-Regular', color: '#888',
+    textAlign: 'center', lineHeight: 19, paddingVertical: 8,
+  },
+  modalBtns: { gap: 10, marginTop: 10 },
+  modalSwitchBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#E75480', paddingVertical: 14, borderRadius: 14,
+    elevation: 3, shadowColor: '#E75480', shadowOpacity: 0.3, shadowRadius: 8,
+  },
+  modalSwitchBtnText: { fontSize: 16, fontFamily: 'Nunito-Bold', color: '#fff' },
+  modalCancelBtn: { alignItems: 'center', paddingVertical: 12 },
+  modalCancelBtnText: { fontSize: 15, fontFamily: 'Nunito-SemiBold', color: '#aaa' },
 })
