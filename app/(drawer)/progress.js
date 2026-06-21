@@ -251,15 +251,17 @@ export default function Progress() {
           </View>
         </LinearGradient>
 
-        {/* ── Scan button ── */}
-        <TouchableOpacity
-          style={styles.scanProgressBtn}
-          onPress={() => router.push('/skinresult?routineCheck=true')}
-        >
-          <Ionicons name="scan-outline" size={18} color="#E75480" />
-          <Text style={styles.scanProgressBtnText}>Scan Skin to Check Progress</Text>
-          <Ionicons name="chevron-forward" size={16} color="#E75480" />
-        </TouchableOpacity>
+        {/* ── Scan button — hidden once threshold reached ── */}
+        {!hitThreshold && (
+          <TouchableOpacity
+            style={styles.scanProgressBtn}
+            onPress={() => router.push('/skinresult?routineCheck=true')}
+          >
+            <Ionicons name="scan-outline" size={18} color="#E75480" />
+            <Text style={styles.scanProgressBtnText}>Scan Skin to Check Progress</Text>
+            <Ionicons name="chevron-forward" size={16} color="#E75480" />
+          </TouchableOpacity>
+        )}
 
         {/* ── 3-scan no-progress → switch product card ── */}
         {hitThreshold && (
