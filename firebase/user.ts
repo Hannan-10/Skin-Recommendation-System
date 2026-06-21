@@ -198,7 +198,7 @@ export async function getActiveRoutine(): Promise<{
   if (!user) return null
   const ref = doc(db, 'users', user.uid)
   try {
-    const snap = await getDoc(ref)
+    const snap = await getDocFromServer(ref)
     if (!snap.exists()) return null
     return snap.data().activeRoutine || null
   } catch {
