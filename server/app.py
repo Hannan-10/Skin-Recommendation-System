@@ -90,6 +90,40 @@ def _load_image_from_request():
     return None
 
 
+def _is_skin_image(img, min_skin_ratio=0.15, max_green_ratio=0.35):
+    """
+    Two-stage skin validation:
+    1. Reject images where green dominates (plants, grass, leaves).
+    2. Require at least min_skin_ratio of pixels to fall within YCbCr skin-tone
+       ranges (works across light, medium, and dark skin tones).
+
+    Warm-toned objects (yellow grass, orange food) fool pure color-space checks,
+    but they also sit in images with heavy green content — the green-dominance
+    gate catches them first.
+    """
+    rgb = np.array(img.convert("RGB"), dtype=np.float32)
+    R, G, B = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+
+    # Gate 1: reject images with too many green-dominant pixels
+    green_mask = (G > R + 15) & (G > B + 15) & (G > 50)
+    green_ratio = float(green_mask.sum()) / max(green_mask.size, 1)
+    if green_ratio > max_green_ratio:
+        return False
+
+    # Gate 2: require enough skin-tone pixels (YCbCr)
+    ycbcr = np.array(img.convert("YCbCr"), dtype=np.float32)
+    Y  = ycbcr[:, :, 0]
+    Cb = ycbcr[:, :, 1]
+    Cr = ycbcr[:, :, 2]
+    skin_mask = (
+        (Cb >= 77)  & (Cb <= 130) &
+        (Cr >= 130) & (Cr <= 175) &
+        (Y  >= 16)
+    )
+    skin_ratio = float(skin_mask.sum()) / max(skin_mask.size, 1)
+    return skin_ratio >= min_skin_ratio
+
+
 def _extract_type_patches(img):
     w, h = img.size
     patches = []
@@ -201,11 +235,15 @@ def predict():
         return jsonify({"error": "no image provided"}), 400
 
     img = img.convert("RGB")
+
+    if not _is_skin_image(img):
+        return jsonify({"is_skin": False, "error": "not_skin"})
+
     patches = _extract_type_patches(img)
     all_probs = type_model.predict(patches, verbose=0)
     avg_probs = np.mean(all_probs, axis=0)
     idx = int(np.argmax(avg_probs))
-    return jsonify({"type": TYPE_CLASSES[idx], "confidence": float(avg_probs[idx])})
+    return jsonify({"is_skin": True, "type": TYPE_CLASSES[idx], "confidence": float(avg_probs[idx])})
 
 
 @app.post("/detect")
@@ -215,6 +253,10 @@ def detect():
         return jsonify({"error": "no image provided"}), 400
 
     img = img.convert("RGB")
+
+    if not _is_skin_image(img):
+        return jsonify({"is_skin": False, "detections": []})
+
     x = _preprocess_conditions(img)
     probs = cond_model.predict(x, verbose=0)[0]
     dets = [
@@ -222,7 +264,7 @@ def detect():
         for i in range(len(COND_CLASSES))
     ]
     dets.sort(key=lambda d: d["confidence"], reverse=True)
-    return jsonify({"detections": dets})
+    return jsonify({"is_skin": True, "detections": dets})
 
 
 @app.post("/recommend")
