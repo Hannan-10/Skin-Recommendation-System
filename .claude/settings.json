@@ -6,7 +6,8 @@
       "Bash(Format-Table FullName)",
       "Bash(ipconfig)",
       "Bash(findstr /i \"IPv4\")",
-      "Bash(findstr \"IPv4\")"
+      "Bash(findstr \"IPv4\")",
+      "Bash(npx expo *)"
     ]
   }
 }

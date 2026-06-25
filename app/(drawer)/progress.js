@@ -392,9 +392,18 @@ export default function Progress() {
                   </TouchableOpacity>
                 </>
               ) : (
-                <Text style={styles.noMoreProducts}>
-                  You've tried all recommended products. Consider consulting a dermatologist.
-                </Text>
+                <View style={styles.noMoreWrap}>
+                  <Text style={styles.noMoreProducts}>
+                    You've tried all recommended products. It's time to see a professional.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.findDermBtn}
+                    onPress={() => { setSwitchModalVisible(false); router.push('/dermatologists') }}
+                  >
+                    <Ionicons name="location-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={styles.findDermBtnText}>Find Nearby Dermatologist</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           </View>
@@ -651,7 +660,13 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   switchNowBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 14 },
+  noMoreWrap: { gap: 12 },
   noMoreProducts: { fontSize: 13, fontFamily: 'Nunito-Regular', color: '#888', textAlign: 'center', lineHeight: 18 },
+  findDermBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#6D4DF2', paddingVertical: 12, borderRadius: 12, elevation: 2,
+  },
+  findDermBtnText: { fontSize: 14, fontFamily: 'Nunito-Bold', color: '#fff' },
 
   // Warning card (immediate bad scan, not yet threshold)
   warningCard: {
