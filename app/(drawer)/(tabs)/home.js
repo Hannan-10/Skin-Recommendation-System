@@ -23,7 +23,6 @@ const Home = () => {
   const router = useRouter();
 
   const [showInfo, setShowInfo] = useState(false);
-  const [underConstruction, setUnderConstruction] = useState(false);
   const [sideOpen, setSideOpen] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const [routineModal, setRoutineModal] = useState(null); // { product, times }
@@ -125,21 +124,6 @@ const Home = () => {
     }, 3000);
     return () => clearInterval(interval);
   }, []);
-
-  if (underConstruction) {
-    return (
-      <View style={styles.centerScreen}>
-        <Text style={styles.constructionTitle}>Under Construction</Text>
-        <Text style={styles.constructionText}>Skin Analysis Feature is coming soon</Text>
-        <Text style={styles.detailText}>
-          This feature will help you identify your skin type and recommend the right products for healthy glowing skin.
-        </Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => setUnderConstruction(false)}>
-          <Text style={styles.backBtnText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
 
   const fmt12 = (t) => {
     const [h, m] = t.split(':').map(Number);
@@ -316,7 +300,7 @@ const Home = () => {
 
         {/* START BUTTON */}
         <View style={styles.startBtnContainer}>
-          <TouchableOpacity style={styles.mainStartBtn} onPress={() => setUnderConstruction(true)}>
+          <TouchableOpacity style={styles.mainStartBtn} onPress={() => router.push('/(drawer)/(tabs)/scan')}>
             <Text style={styles.mainStartBtnText}>Start Skinalyst</Text>
             <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 10 }} />
           </TouchableOpacity>
@@ -473,13 +457,6 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   tipText: { fontSize: 13, fontFamily: 'Nunito-Bold', textAlign: 'center', marginTop: 6, color: '#333' },
-
-  centerScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#FFF1F6' },
-  constructionTitle: { fontSize: 28, color: '#E75480', textAlign: 'center', fontFamily: 'Nunito-ExtraBold' },
-  constructionText: { fontSize: 18, color: '#E75480', textAlign: 'center', marginTop: 10, fontFamily: 'Nunito-SemiBold' },
-  detailText: { fontSize: 16, color: '#333', textAlign: 'center', marginTop: 20, fontFamily: 'Nunito-Regular' },
-  backBtn: { marginTop: 30, backgroundColor: '#E75480', padding: 12, borderRadius: 25 },
-  backBtnText: { color: '#fff', fontSize: 16, fontFamily: 'Nunito-Bold' },
 
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' },
   sideSheet: { position: 'absolute', top: 0, left: 0, bottom: 0, backgroundColor: '#fff', borderTopRightRadius: 24, borderBottomRightRadius: 24, paddingHorizontal: 10, paddingTop: 10, elevation: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } },
