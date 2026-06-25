@@ -20,6 +20,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState('error');
   const [modalTitle, setModalTitle] = useState('');
@@ -109,15 +110,18 @@ export default function LoginScreen() {
 
               <View style={styles.inputContainer}>
                 <Ionicons name="lock-closed-outline" size={20} color="#000" style={styles.icon} />
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Password" 
+                <TextInput
+                  style={styles.input}
+                  placeholder="Password"
                   placeholderTextColor="#999"
                   selectionColor="#E75480"
-                  secureTextEntry 
+                  secureTextEntry={!showPassword}
                   value={password}
                   onChangeText={setPassword}
                 />
+                <TouchableOpacity onPress={() => setShowPassword(p => !p)} style={styles.eyeBtn}>
+                  <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#aaa" />
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -233,6 +237,7 @@ const styles = StyleSheet.create({
   },
   icon: { marginRight: 10 },
   input: { flex: 1, fontSize: 16, color: '#333', fontFamily: 'Nunito-Regular' },
+  eyeBtn: { paddingLeft: 8 },
 
   forgotBtn: { alignSelf: 'flex-end', marginBottom: 25 },
   forgotTextBlue: { 
