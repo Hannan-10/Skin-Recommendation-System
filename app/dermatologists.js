@@ -125,45 +125,62 @@ export default function Dermatologists() {
     )
   }
 
-  const renderItem = ({ item }) => (
-    <View style={styles.card}>
-      <View style={styles.cardTop}>
-        <View style={styles.cardIconWrap}>
-          <Ionicons name="medical" size={20} color="#E75480" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
-          {!!item.speciality && (
-            <View style={styles.specialityChip}>
-              <Text style={styles.specialityChipText}>
-                {item.speciality.charAt(0).toUpperCase() + item.speciality.slice(1)}
-              </Text>
-            </View>
-          )}
-          {!!item.address && (
+  const renderItem = ({ item }) => {
+    const isDerm = item.speciality?.toLowerCase().includes('dermatol')
+    const leftIcon = isDerm ? 'body-outline' : item.speciality ? 'ribbon-outline' : 'medkit-outline'
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardTop}>
+          {/* Left icon — changes based on speciality */}
+          <View style={styles.cardIconWrap}>
+            <Ionicons name={leftIcon} size={20} color="#E75480" />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
+
+            {/* Speciality row with icon */}
+            {!!item.speciality && (
+              <View style={styles.cardRow}>
+                <Ionicons name="ribbon-outline" size={12} color="#6D4DF2" style={{ marginRight: 4 }} />
+                <Text style={styles.cardSpeciality}>
+                  {item.speciality.charAt(0).toUpperCase() + item.speciality.slice(1)}
+                </Text>
+              </View>
+            )}
+
+            {/* Address row */}
+            {!!item.address && (
+              <View style={styles.cardRow}>
+                <Ionicons name="location-outline" size={12} color="#aaa" style={{ marginRight: 4 }} />
+                <Text style={styles.cardAddress} numberOfLines={2}>{item.address}</Text>
+              </View>
+            )}
+
+            {/* Phone row */}
+            {!!item.phone && (
+              <TouchableOpacity style={styles.cardRow} onPress={() => Linking.openURL(`tel:${item.phone}`)}>
+                <Ionicons name="call-outline" size={12} color="#E75480" style={{ marginRight: 4 }} />
+                <Text style={styles.cardPhone}>{item.phone}</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Distance row with icon */}
             <View style={styles.cardRow}>
-              <Ionicons name="location-outline" size={12} color="#aaa" style={{ marginRight: 4 }} />
-              <Text style={styles.cardAddress} numberOfLines={2}>{item.address}</Text>
+              <Ionicons name="navigate-outline" size={12} color="#00C896" style={{ marginRight: 4 }} />
+              <Text style={styles.cardDistance}>{fmtDistance(item.distance)} away</Text>
             </View>
-          )}
-          {!!item.phone && (
-            <TouchableOpacity style={styles.cardRow} onPress={() => Linking.openURL(`tel:${item.phone}`)}>
-              <Ionicons name="call-outline" size={12} color="#E75480" style={{ marginRight: 4 }} />
-              <Text style={styles.cardPhone}>{item.phone}</Text>
-            </TouchableOpacity>
-          )}
+          </View>
         </View>
-        <View style={styles.distanceBadge}>
-          <Text style={styles.distanceNum}>{fmtDistance(item.distance)}</Text>
-          <Text style={styles.distanceLabel}>away</Text>
-        </View>
+
+        <TouchableOpacity style={styles.mapsBtn} onPress={() => openMaps(item.lat, item.lon, item.name)}>
+          <Ionicons name="navigate-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
+          <Text style={styles.mapsBtnText}>Open in Maps</Text>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity style={styles.mapsBtn} onPress={() => openMaps(item.lat, item.lon, item.name)}>
-        <Ionicons name="navigate-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
-        <Text style={styles.mapsBtnText}>Open in Maps</Text>
-      </TouchableOpacity>
-    </View>
-  )
+    )
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -289,19 +306,11 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   cardName: { fontSize: 14, fontFamily: 'Nunito-Bold', color: '#1A1A1A', marginBottom: 4 },
-  specialityChip: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#F3EFFE', paddingHorizontal: 8, paddingVertical: 2,
-    borderRadius: 10, marginBottom: 4,
-  },
-  specialityChipText: { fontSize: 10, fontFamily: 'Nunito-SemiBold', color: '#6D4DF2' },
   cardRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+  cardSpeciality: { fontSize: 11, fontFamily: 'Nunito-SemiBold', color: '#6D4DF2', flexShrink: 1 },
   cardAddress: { flex: 1, fontSize: 11, fontFamily: 'Nunito-Regular', color: '#888', lineHeight: 15 },
   cardPhone: { fontSize: 12, fontFamily: 'Nunito-SemiBold', color: '#E75480' },
-
-  distanceBadge: { alignItems: 'center', flexShrink: 0 },
-  distanceNum: { fontSize: 13, fontFamily: 'Nunito-ExtraBold', color: '#E75480' },
-  distanceLabel: { fontSize: 9, fontFamily: 'Nunito-Regular', color: '#aaa' },
+  cardDistance: { fontSize: 11, fontFamily: 'Nunito-SemiBold', color: '#00C896' },
 
   mapsBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
