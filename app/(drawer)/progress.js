@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useFocusEffect } from '@react-navigation/native'
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView,
-  TouchableOpacity, ActivityIndicator, Modal,
+  TouchableOpacity, ActivityIndicator, Modal, Animated,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -56,6 +56,68 @@ function compareScans(baseScan, currentScan) {
   return { improvements, improvedCount, deterioratedCount, overallDelta }
 }
 
+function Skeleton({ width, height, borderRadius = 8, style }) {
+  const opacity = useRef(new Animated.Value(0.4)).current
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+      ])
+    ).start()
+  }, [])
+  return <Animated.View style={[{ width, height, borderRadius, backgroundColor: '#F2C4D4', opacity }, style]} />
+}
+
+function ProgressSkeleton() {
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      {/* Routine banner */}
+      <Skeleton width="100%" height={90} borderRadius={18} style={{ marginBottom: 14 }} />
+      {/* Scan button */}
+      <Skeleton width="100%" height={52} borderRadius={14} style={{ marginBottom: 14 }} />
+      {/* Score card */}
+      <View style={skStyles.card}>
+        <Skeleton width={130} height={13} style={{ marginBottom: 10 }} />
+        <Skeleton width={90} height={42} borderRadius={10} style={{ marginBottom: 8 }} />
+        <Skeleton width={170} height={11} borderRadius={6} />
+      </View>
+      {/* Pie charts */}
+      <View style={skStyles.card}>
+        <Skeleton width={180} height={16} borderRadius={8} style={{ marginBottom: 16 }} />
+        <View style={{ flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' }}>
+          <Skeleton width={110} height={110} borderRadius={55} />
+          <Skeleton width={22} height={22} borderRadius={11} />
+          <Skeleton width={110} height={110} borderRadius={55} />
+        </View>
+      </View>
+      {/* Condition breakdown */}
+      <View style={skStyles.card}>
+        <Skeleton width={160} height={16} borderRadius={8} style={{ marginBottom: 16 }} />
+        {[1, 2, 3, 4, 5].map(i => (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <Skeleton width={10} height={10} borderRadius={5} />
+            <Skeleton width={64} height={12} borderRadius={6} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <Skeleton width="100%" height={8} borderRadius={4} />
+              <Skeleton width="100%" height={8} borderRadius={4} />
+            </View>
+            <Skeleton width={34} height={13} borderRadius={6} />
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  )
+}
+
+const skStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#fff', borderRadius: 18, padding: 16,
+    marginBottom: 14,
+    elevation: 2, shadowColor: '#E75480', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+  },
+})
+
 export default function Progress() {
   const router = useRouter()
   const { freshScan: freshScanStr } = useLocalSearchParams()
@@ -86,7 +148,8 @@ export default function Progress() {
     }, [])
   )
 
-  // After fresh scan: mark check (once), then reload so noImprovementCount is current
+  // After fresh scan: mark check (once), then reload so noImprovementCount is current.
+  // setLoading(true) prevents flashing stale count (e.g. 2/3 → 3/3) during the reload.
   useEffect(() => {
     if (!freshScan || !routine || markedRef.current) return
     const base = routine.baseScan
@@ -95,8 +158,10 @@ export default function Progress() {
     markedRef.current = true
     const { overallDelta } = compareScans(base, freshScan)
     ;(async () => {
+      setLoading(true)
       await markRoutineChecked(overallDelta <= 0).catch(() => {})
       await loadRoutine()
+      setLoading(false)
     })()
   }, [routine, freshScan])
 
@@ -106,9 +171,16 @@ export default function Progress() {
     return (
       <SafeAreaView style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color="#E75480" />
+        <View style={styles.topNav}>
+          <View style={{ backgroundColor: '#fff', padding: 10, borderRadius: 12, opacity: 0.4 }}>
+            <Ionicons name="arrow-back" size={22} color="#2D2D2D" />
+          </View>
+          <View>
+            <Skeleton width={100} height={12} borderRadius={6} style={{ marginBottom: 6 }} />
+            <Skeleton width={160} height={22} borderRadius={8} />
+          </View>
         </View>
+        <ProgressSkeleton />
       </SafeAreaView>
     )
   }
@@ -392,9 +464,18 @@ export default function Progress() {
                   </TouchableOpacity>
                 </>
               ) : (
-                <Text style={styles.noMoreProducts}>
-                  You've tried all recommended products. Consider consulting a dermatologist.
-                </Text>
+                <View style={styles.noMoreWrap}>
+                  <Text style={styles.noMoreProducts}>
+                    You've tried all recommended products. It's time to see a professional.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.findDermBtn}
+                    onPress={() => { setSwitchModalVisible(false); router.push('/dermatologists') }}
+                  >
+                    <Ionicons name="location-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={styles.findDermBtnText}>Find Nearby Dermatologist</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           </View>
@@ -651,7 +732,13 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   switchNowBtnText: { color: '#fff', fontFamily: 'Nunito-Bold', fontSize: 14 },
+  noMoreWrap: { gap: 12 },
   noMoreProducts: { fontSize: 13, fontFamily: 'Nunito-Regular', color: '#888', textAlign: 'center', lineHeight: 18 },
+  findDermBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#6D4DF2', paddingVertical: 12, borderRadius: 12, elevation: 2,
+  },
+  findDermBtnText: { fontSize: 14, fontFamily: 'Nunito-Bold', color: '#fff' },
 
   // Warning card (immediate bad scan, not yet threshold)
   warningCard: {
