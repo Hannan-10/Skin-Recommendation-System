@@ -10,6 +10,21 @@ import io
 import keras
 import tensorflow as tf
 
+# ── Face detection (OpenCV Haar cascade — no extra model download needed) ──────
+try:
+    import cv2 as _cv2
+    _FACE_CASCADE = _cv2.CascadeClassifier(
+        _cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+    )
+    _USE_FACE_DETECTION = True
+    print("OpenCV available — using face detection for skin validation.")
+except ImportError:
+    _cv2 = None
+    _FACE_CASCADE = None
+    _USE_FACE_DETECTION = False
+    print("OpenCV not found — using colour-analysis fallback.")
+    print("For best results run:  pip install opencv-python-headless")
+
 app = Flask(__name__)
 CORS(app)
 
@@ -90,38 +105,130 @@ def _load_image_from_request():
     return None
 
 
-def _is_skin_image(img, min_skin_ratio=0.15, max_green_ratio=0.35):
-    """
-    Two-stage skin validation:
-    1. Reject images where green dominates (plants, grass, leaves).
-    2. Require at least min_skin_ratio of pixels to fall within YCbCr skin-tone
-       ranges (works across light, medium, and dark skin tones).
+def _region_has_skin(rgb_arr, x, y, w, h):
+    """Check that a detected face region actually contains skin-tone pixels."""
+    region = rgb_arr[y:y+h, x:x+w].astype(np.float32)
+    if region.size == 0:
+        return False
+    R, G, B = region[:,:,0], region[:,:,1], region[:,:,2]
+    ycbcr = np.array(
+        Image.fromarray(rgb_arr[y:y+h, x:x+w]).convert("YCbCr"),
+        dtype=np.float32
+    )
+    Y, Cb, Cr = ycbcr[:,:,0], ycbcr[:,:,1], ycbcr[:,:,2]
+    skin = (
+        (Cb >= 77) & (Cb <= 130) &
+        (Cr >= 130) & (Cr <= 173) &
+        (Y  >= 40) &
+        (B  >= G * 0.55)
+    )
+    return float(skin.sum()) / max(skin.size, 1) >= 0.25
 
-    Warm-toned objects (yellow grass, orange food) fool pure color-space checks,
-    but they also sit in images with heavy green content — the green-dominance
-    gate catches them first.
+
+def _is_predominantly_skin(rgb_arr):
     """
-    rgb = np.array(img.convert("RGB"), dtype=np.float32)
+    Fallback for extreme close-ups where the cascade can't find a full face.
+    A tight skin/face crop has 60-90 % skin pixels; food images rarely exceed 30 %.
+    """
+    rgb = rgb_arr.astype(np.float32)
     R, G, B = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
 
-    # Gate 1: reject images with too many green-dominant pixels
+    # Reject green-dominant images first (plants, grass)
     green_mask = (G > R + 15) & (G > B + 15) & (G > 50)
-    green_ratio = float(green_mask.sum()) / max(green_mask.size, 1)
-    if green_ratio > max_green_ratio:
+    if float(green_mask.sum()) / max(green_mask.size, 1) > 0.25:
         return False
 
-    # Gate 2: require enough skin-tone pixels (YCbCr)
-    ycbcr = np.array(img.convert("YCbCr"), dtype=np.float32)
-    Y  = ycbcr[:, :, 0]
-    Cb = ycbcr[:, :, 1]
-    Cr = ycbcr[:, :, 2]
+    ycbcr = np.array(Image.fromarray(rgb_arr).convert("YCbCr"), dtype=np.float32)
+    Y, Cb, Cr = ycbcr[:, :, 0], ycbcr[:, :, 1], ycbcr[:, :, 2]
+
+    # Saturation: (max-min)/max — rejects near-white (coleslaw) and near-grey pixels
+    maxC = np.maximum(np.maximum(R, G), B)
+    minC = np.minimum(np.minimum(R, G), B)
+    saturation = np.where(maxC > 0, (maxC - minC) / maxC, 0.0)
+
+    skin = (
+        (Cb >= 77) & (Cb <= 130) &
+        (Cr >= 133) & (Cr <= 173) &   # raised floor to exclude near-white colours
+        (Y  >= 40)  &
+        (B  >= G * 0.55) &             # 0.55 (was 0.50) rejects brown bread/food tones
+        (saturation >= 0.12)           # rejects coleslaw / pale near-white non-skin
+    )
+    return float(skin.sum()) / max(skin.size, 1) >= 0.50  # raised from 0.35 — real close-up skin easily clears 60 %
+
+
+def _is_skin_image(img):
+    """
+    Validates that the image contains real skin / a human face.
+
+    Two-step when OpenCV is available:
+      1. Haar cascade with STRICT parameters (minNeighbors=8) to find candidate
+         face regions — high minNeighbors eliminates the false positives that the
+         default settings produce on food/offices/patterns.
+      2. For every candidate region, verify it actually contains skin-tone pixels
+         (YCbCr + B/G ratio check on the detected box). A food pattern that fools
+         the cascade will NOT have enough skin-coloured pixels in that box.
+
+    Colour-only fallback when OpenCV is absent:
+      - Green gate (rejects plants)
+      - Centre-crop skin ratio check (rejects food/objects)
+    """
+    if _USE_FACE_DETECTION:
+        rgb_arr = np.array(img.convert("RGB"), dtype=np.uint8)
+        gray = _cv2.cvtColor(rgb_arr, _cv2.COLOR_RGB2GRAY)
+        # equalise histogram so dark/bright images are handled uniformly
+        gray = _cv2.equalizeHist(gray)
+        detections = _FACE_CASCADE.detectMultiScale(
+            gray,
+            scaleFactor=1.05,
+            minNeighbors=8,      # strict — eliminates food/office false positives
+            minSize=(60, 60),
+            flags=_cv2.CASCADE_SCALE_IMAGE,
+        )
+        img_area = gray.shape[0] * gray.shape[1]
+        if len(detections) > 0:
+            for (x, y, w, h) in detections:
+                if (w * h) / img_area < 0.05:  # face < 5% of image → wall art / background person
+                    continue
+                if _region_has_skin(rgb_arr, x, y, w, h):
+                    return True
+
+        # Cascade missed the face (extreme close-up, partial face, unusual angle).
+        # Fall back: if the WHOLE image is predominantly skin-coloured it is a close-up
+        # skin/face shot. Require a much higher threshold (40 %) than the non-OpenCV path
+        # so that food / offices with occasional warm pixels don't slip through.
+        return _is_predominantly_skin(rgb_arr)
+
+    # ── Color-based fallback ──────────────────────────────────────────────────
+    rgb = np.array(img.convert("RGB"), dtype=np.float32)
+    R, G, B = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+    h, w = R.shape
+
+    # Gate 1: reject green-dominant images (plants, grass, leaves)
+    green_mask = (G > R + 15) & (G > B + 15) & (G > 50)
+    if float(green_mask.sum()) / max(green_mask.size, 1) > 0.30:
+        return False
+
+    # Gate 2: analyse only the centre 60 % — faces live here, background doesn't
+    cy, cx = h // 2, w // 2
+    rh, rw = max(1, int(h * 0.30)), max(1, int(w * 0.30))
+    R_c = R[cy - rh:cy + rh, cx - rw:cx + rw]
+    G_c = G[cy - rh:cy + rh, cx - rw:cx + rw]
+    B_c = B[cy - rh:cy + rh, cx - rw:cx + rw]
+
+    crop = img.crop((cx - rw, cy - rh, cx + rw, cy + rh))
+    ycbcr_c = np.array(crop.convert("YCbCr"), dtype=np.float32)
+    Y_c  = ycbcr_c[:, :, 0]
+    Cb_c = ycbcr_c[:, :, 1]
+    Cr_c = ycbcr_c[:, :, 2]
+
     skin_mask = (
-        (Cb >= 77)  & (Cb <= 130) &
-        (Cr >= 130) & (Cr <= 175) &
-        (Y  >= 16)
+        (Cb_c >= 77)  & (Cb_c <= 130) &
+        (Cr_c >= 130) & (Cr_c <= 175) &
+        (Y_c  >= 16)  &
+        (B_c  >= G_c * 0.60)  # skin keeps blue; golden food/bread does not
     )
     skin_ratio = float(skin_mask.sum()) / max(skin_mask.size, 1)
-    return skin_ratio >= min_skin_ratio
+    return skin_ratio >= 0.20
 
 
 def _extract_type_patches(img):

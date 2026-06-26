@@ -7,7 +7,28 @@
       "Bash(ipconfig)",
       "Bash(findstr /i \"IPv4\")",
       "Bash(findstr \"IPv4\")",
-      "Bash(npx expo *)"
+      "Bash(npx expo *)",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/pip.exe\" install \"numpy<2\")",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/pip.exe\" install opencv-python-headless)",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/pip.exe\" install \"opencv-python-headless==4.8.1.78\" --force-reinstall --no-deps)",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/python.exe\" -c \"import cv2; print\\('cv2 OK:', cv2.__version__\\)\")",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/pip.exe\" install \"numpy==1.26.4\" --force-reinstall --no-deps)",
+      "Bash(tasklist)",
+      "Bash(taskkill //F //PID 18108 //PID 17720)",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/pip.exe\" install tensorflow --force-reinstall --no-deps)",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/python.exe\" -c \"import numpy; print\\('numpy:', numpy.__version__\\); import cv2; print\\('cv2:', cv2.__version__\\); import tensorflow; print\\('tensorflow:', tensorflow.__version__\\)\")",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/pip.exe\" install \"protobuf>=4.25.0\" --no-deps)",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/pip.exe\" install \"tensorflow==2.17.0\" --force-reinstall --no-deps)",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/python.exe\" -c \"import numpy; print\\('numpy:', numpy.__version__\\); import cv2; print\\('cv2:', cv2.__version__\\); import tensorflow as tf; print\\('tensorflow:', tf.__version__\\)\")",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/python.exe\" -c \"import tensorflow as tf; print\\(tf.__version__\\)\")",
+      "Bash('C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/python.exe' -c ' *)",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/pip.exe\" install \"tensorflow-intel==2.17.0\" --force-reinstall --no-deps)",
+      "Bash(\"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/python.exe\" app.py)",
+      "Bash(taskkill //F //PID 15088 //PID 8752)",
+      "Bash(nohup \"C:/Users/HP/Documents/GitHub/Skin Recommendation System/server/.venv/Scripts/python.exe\" app.py)",
+      "Bash(echo \"Server PID: $!\")",
+      "Bash(sleep 20 && cat /tmp/flask_server.log 2>&1 | grep -v \"^I0\\\\|oneDNN\\\\|UserWarning\\\\|warnings\\\\|layer\\\\|Conv1D\\\\|mask\" | head -15)",
+      "Read(//tmp/**)"
     ]
   }
 }

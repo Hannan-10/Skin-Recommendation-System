@@ -32,7 +32,7 @@ export default function SkinResult() {
   const spinAnim = useRef(new Animated.Value(0));
   const timerRef = useRef(null);
   const startRef = useRef(0);
-  const targetRef = useRef(60000); // ramp to ~95% in ~60s, then wait for completion
+  const targetRef = useRef(25000); // ramp to ~95% in ~25s, then wait for completion
 
   const toRoutineType = (t) => {
     if (t === 'normal') return 'combination';
@@ -63,9 +63,12 @@ export default function SkinResult() {
       timerRef.current = setInterval(() => {
         const elapsed = Date.now() - startRef.current;
         const t = Math.max(0, Math.min(1, elapsed / targetRef.current));
-        const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic for quicker early increments
-        const deterministic = Math.floor(eased * 95); // cap at 95 until completion
-        setProgress((p) => Math.max(p, deterministic));
+        const eased = 1 - Math.pow(1 - t, 3);
+        const phase1 = Math.floor(eased * 90); // fast ramp 0→90% in first 25s
+        setProgress((p) => {
+          if (p >= 90) return Math.min(99, p + 0.2); // slow crawl 90→99%, never freezes
+          return Math.max(p, phase1);
+        });
       }, 350);
 
       return () => {
@@ -247,7 +250,7 @@ export default function SkinResult() {
                   </View>
                   <Text style={styles.loadingPercent}>{progress}%</Text>
                   <Text style={styles.loadingText}>
-                    {progress < 30 ? 'Uploading image...' : progress < 70 ? 'Processing...' : 'Finalizing...'}
+                    {progress < 30 ? 'Uploading image...' : progress < 70 ? 'Analyzing skin...' : progress < 90 ? 'Running models...' : 'Almost done...'}
                   </Text>
                   <View style={styles.loaderTrack}>
                     <View style={[styles.loaderFill, { width: (220 * Math.min(progress, 100)) / 100 }]} />
@@ -313,7 +316,7 @@ export default function SkinResult() {
               )}
             </View>
 
-            {notSkin ? null : isRoutineCheck ? (
+            {!loading && (notSkin ? null : isRoutineCheck ? (
               /* ── Routine progress flow ── */
               <>
                 <View style={styles.routineCheckBanner}>
@@ -359,10 +362,10 @@ export default function SkinResult() {
                   <Text style={styles.recsButtonText}>Get Product Recommendations</Text>
                 </TouchableOpacity>
               </>
-            )}
+            ))}
 
-            {/* Save Result */}
-            {!notSkin && (
+            {/* Save Result — only after scan completes successfully */}
+            {!loading && !notSkin && (
               <TouchableOpacity
                 style={[styles.saveButton, saved && styles.saveButtonDone]}
                 onPress={handleSaveResult}
@@ -380,15 +383,17 @@ export default function SkinResult() {
               </TouchableOpacity>
             )}
 
-            {/* Secondary buttons side by side */}
-            <View style={styles.secondaryRow}>
-              <TouchableOpacity style={styles.secondaryButton} onPress={pickFromCamera}>
-                <Text style={styles.secondaryText}>Retake</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryButton} onPress={pickFromGallery}>
-                <Text style={styles.secondaryText}>Choose Another</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Secondary buttons — always visible so user can cancel/retry */}
+            {!loading && (
+              <View style={styles.secondaryRow}>
+                <TouchableOpacity style={styles.secondaryButton} onPress={pickFromCamera}>
+                  <Text style={styles.secondaryText}>Retake</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.secondaryButton} onPress={pickFromGallery}>
+                  <Text style={styles.secondaryText}>Choose Another</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ) : (
           <View style={{ alignItems: 'center', width: '100%' }}>
