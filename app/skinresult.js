@@ -25,13 +25,14 @@ export default function SkinResult() {
   const [conditions, setConditions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [notSkin, setNotSkin] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [freshScanData, setFreshScanData] = useState(null); // captured once when scan completes
   const spinAnim = useRef(new Animated.Value(0));
   const timerRef = useRef(null);
   const startRef = useRef(0);
-  const targetRef = useRef(60000); // ramp to ~95% in ~60s, then wait for completion
+  const targetRef = useRef(25000); // ramp to ~95% in ~25s, then wait for completion
 
   const toRoutineType = (t) => {
     if (t === 'normal') return 'combination';
@@ -62,9 +63,12 @@ export default function SkinResult() {
       timerRef.current = setInterval(() => {
         const elapsed = Date.now() - startRef.current;
         const t = Math.max(0, Math.min(1, elapsed / targetRef.current));
-        const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic for quicker early increments
-        const deterministic = Math.floor(eased * 95); // cap at 95 until completion
-        setProgress((p) => Math.max(p, deterministic));
+        const eased = 1 - Math.pow(1 - t, 3);
+        const phase1 = Math.floor(eased * 90); // fast ramp 0→90% in first 25s
+        setProgress((p) => {
+          if (p >= 90) return Math.min(99, p + 0.2); // slow crawl 90→99%, never freezes
+          return Math.max(p, phase1);
+        });
       }, 350);
 
       return () => {
@@ -82,7 +86,7 @@ export default function SkinResult() {
       }
     }
   }, [loading]);
-  // Returns the skin type string
+  // Returns the skin type string, or null if not skin / API error
   const classifyWithModel = async (uri, manageLoading = true) => {
     try {
       if (manageLoading) setLoading(true);
@@ -90,17 +94,18 @@ export default function SkinResult() {
       formData.append("file", { uri, name: "image.jpg", type: "image/jpeg" });
       const res = await fetch(`${API_BASE}/predict`, { method: "POST", body: formData });
       const json = await res.json();
+      if (json.is_skin === false) {
+        setNotSkin(true);
+        return null;
+      }
       if (json && json.type) {
         setSkinType(json.type);
         setConfidence(json.confidence ?? null);
         return json.type;
       }
     } catch {
-      const labels = ['oily', 'dry', 'normal'];
-      const t = labels[Math.floor(Math.random() * labels.length)];
-      setSkinType(t);
-      setConfidence(null);
-      return t;
+      setNotSkin(true);
+      return null;
     } finally {
       if (manageLoading) setLoading(false);
     }
@@ -114,26 +119,25 @@ export default function SkinResult() {
       formData.append("file", { uri, name: "image.jpg", type: "image/jpeg" });
       const res = await fetch(`${API_BASE}/detect`, { method: "POST", body: formData });
       const json = await res.json();
-      if (json && Array.isArray(json.detections)) {
-        const mapped = json.detections
-          .filter(d => d && d.label)
-          .map(d => ({ label: d.label, confidence: Math.max(0, Math.min(1, d.confidence ?? 0)) }));
-        const result = mapped.slice(0, 5);
-        setConditions(result);
-        return result;
+      if (json.is_skin === false || !Array.isArray(json.detections)) {
+        setConditions([]);
+        return [];
       }
-      throw new Error('bad');
+      const mapped = json.detections
+        .filter(d => d && d.label)
+        .map(d => ({ label: d.label, confidence: Math.max(0, Math.min(1, d.confidence ?? 0)) }));
+      const result = mapped.slice(0, 5);
+      setConditions(result);
+      return result;
     } catch {
-      const labels = ['acne', 'blackheads', 'dark spots', 'pores', 'wrinkles'];
-      const fake = labels.map(l => ({ label: l, confidence: Math.random() * 0.7 + 0.2 }))
-        .sort((a, b) => b.confidence - a.confidence);
-      setConditions(fake);
-      return fake;
+      setConditions([]);
+      return [];
     }
   };
 
   const runBoth = async (uri) => {
     setLoading(true);
+    setNotSkin(false);
     try {
       const [typeResult, condResult] = await Promise.allSettled([
         classifyWithModel(uri, false),
@@ -143,18 +147,16 @@ export default function SkinResult() {
       const finalType = typeResult.status === 'fulfilled' ? typeResult.value : null;
       const finalConds = condResult.status === 'fulfilled' ? condResult.value : [];
 
-      console.log('[runBoth] skinType:', finalType, 'conditions:', finalConds.length, 'isRoutineCheck:', isRoutineCheck);
+      // Not skin — stop here, error card will show
+      if (!finalType) return;
 
       // Save last scan to Firebase (always)
-      if (finalType) {
-        saveScanResult({ skinType: finalType, conditions: finalConds }).catch(e =>
-          console.warn('[runBoth] saveScanResult failed:', e)
-        );
-      }
+      saveScanResult({ skinType: finalType, conditions: finalConds }).catch(e =>
+        console.warn('[runBoth] saveScanResult failed:', e)
+      );
 
       // For routine check: await Firebase write first, then enable the button.
-      // This ensures progress screen always reads fresh data with no stale-cache flash.
-      if (isRoutineCheck && finalType && finalConds.length > 0) {
+      if (isRoutineCheck && finalConds.length > 0) {
         await saveRoutineProgressScan({ skinType: finalType, conditions: finalConds }).catch(e =>
           console.warn('[runBoth] saveRoutineProgressScan failed:', e)
         );
@@ -195,6 +197,9 @@ export default function SkinResult() {
     if (!result.canceled) {
       const uri = result.assets?.[0]?.uri;
       setImageUri(uri);
+      setSkinType(null);
+      setConditions([]);
+      setNotSkin(false);
       await runBoth(uri);
     }
   };
@@ -209,6 +214,9 @@ export default function SkinResult() {
     if (!result.canceled) {
       const uri = result.assets?.[0]?.uri;
       setImageUri(uri);
+      setSkinType(null);
+      setConditions([]);
+      setNotSkin(false);
       await runBoth(uri);
     }
   };
@@ -242,11 +250,20 @@ export default function SkinResult() {
                   </View>
                   <Text style={styles.loadingPercent}>{progress}%</Text>
                   <Text style={styles.loadingText}>
-                    {progress < 30 ? 'Uploading image...' : progress < 70 ? 'Processing...' : 'Finalizing...'}
+                    {progress < 30 ? 'Uploading image...' : progress < 70 ? 'Analyzing skin...' : progress < 90 ? 'Running models...' : 'Almost done...'}
                   </Text>
                   <View style={styles.loaderTrack}>
                     <View style={[styles.loaderFill, { width: (220 * Math.min(progress, 100)) / 100 }]} />
                   </View>
+                </View>
+              ) : notSkin ? (
+                <View style={styles.notSkinWrap}>
+                  <Ionicons name="warning-outline" size={48} color="#F28BA8" style={{ marginBottom: 12 }} />
+                  <Text style={styles.notSkinTitle}>No Skin Detected</Text>
+                  <Text style={styles.notSkinMsg}>
+                    This image does not appear to contain skin.{'\n'}
+                    Please upload a clear photo of your face or skin area.
+                  </Text>
                 </View>
               ) : (
                 <>
@@ -299,7 +316,7 @@ export default function SkinResult() {
               )}
             </View>
 
-            {isRoutineCheck ? (
+            {!loading && (notSkin ? null : isRoutineCheck ? (
               /* ── Routine progress flow ── */
               <>
                 <View style={styles.routineCheckBanner}>
@@ -345,34 +362,38 @@ export default function SkinResult() {
                   <Text style={styles.recsButtonText}>Get Product Recommendations</Text>
                 </TouchableOpacity>
               </>
+            ))}
+
+            {/* Save Result — only after scan completes successfully */}
+            {!loading && !notSkin && (
+              <TouchableOpacity
+                style={[styles.saveButton, saved && styles.saveButtonDone]}
+                onPress={handleSaveResult}
+                disabled={saved || saving}
+              >
+                <Ionicons
+                  name={saved ? 'bookmark' : 'bookmark-outline'}
+                  size={18}
+                  color={saved ? '#fff' : '#E75480'}
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={[styles.saveButtonText, saved && styles.saveButtonTextDone]}>
+                  {saving ? 'Saving…' : saved ? 'Result Saved' : 'Save Result'}
+                </Text>
+              </TouchableOpacity>
             )}
 
-            {/* Save Result */}
-            <TouchableOpacity
-              style={[styles.saveButton, saved && styles.saveButtonDone]}
-              onPress={handleSaveResult}
-              disabled={saved || saving}
-            >
-              <Ionicons
-                name={saved ? 'bookmark' : 'bookmark-outline'}
-                size={18}
-                color={saved ? '#fff' : '#E75480'}
-                style={{ marginRight: 8 }}
-              />
-              <Text style={[styles.saveButtonText, saved && styles.saveButtonTextDone]}>
-                {saving ? 'Saving…' : saved ? 'Result Saved' : 'Save Result'}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Secondary buttons side by side */}
-            <View style={styles.secondaryRow}>
-              <TouchableOpacity style={styles.secondaryButton} onPress={pickFromCamera}>
-                <Text style={styles.secondaryText}>Retake</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryButton} onPress={pickFromGallery}>
-                <Text style={styles.secondaryText}>Choose Another</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Secondary buttons — always visible so user can cancel/retry */}
+            {!loading && (
+              <View style={styles.secondaryRow}>
+                <TouchableOpacity style={styles.secondaryButton} onPress={pickFromCamera}>
+                  <Text style={styles.secondaryText}>Retake</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.secondaryButton} onPress={pickFromGallery}>
+                  <Text style={styles.secondaryText}>Choose Another</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ) : (
           <View style={{ alignItems: 'center', width: '100%' }}>
@@ -487,6 +508,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 6,
   },
+  notSkinWrap: { alignItems: 'center', paddingVertical: 12 },
+  notSkinTitle: { color: '#F28BA8', fontSize: 18, fontFamily: 'Nunito-ExtraBold', marginBottom: 10 },
+  notSkinMsg: { color: '#AAA', fontSize: 13, fontFamily: 'Nunito-Regular', textAlign: 'center', lineHeight: 20 },
+
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   loadingWrap: { alignItems: 'center', justifyContent: 'center' },
   loadingPercent: { color: '#F28BA8', fontSize: 22, fontFamily: 'Nunito-ExtraBold', marginTop: 12 },

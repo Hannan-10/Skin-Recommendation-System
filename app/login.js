@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TextInput, 
-  TouchableOpacity, 
-  Image, 
-  ScrollView, 
-  KeyboardAvoidingView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  ScrollView,
+  KeyboardAvoidingView,
   Platform,
-  SafeAreaView 
+  SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +21,8 @@ export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState('error');
   const [modalTitle, setModalTitle] = useState('');
@@ -37,6 +40,7 @@ export default function LoginScreen() {
       setModalVisible(true);
       return;
     }
+    setLoading(true);
     try {
       await loginUser({ email, password });
       setModalType('success');
@@ -50,6 +54,8 @@ export default function LoginScreen() {
       setModalMessage('Incorrect email or password.');
       setModalButton('Try Again');
       setModalVisible(true);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -109,15 +115,18 @@ export default function LoginScreen() {
 
               <View style={styles.inputContainer}>
                 <Ionicons name="lock-closed-outline" size={20} color="#000" style={styles.icon} />
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Password" 
+                <TextInput
+                  style={styles.input}
+                  placeholder="Password"
                   placeholderTextColor="#999"
                   selectionColor="#E75480"
-                  secureTextEntry 
+                  secureTextEntry={!showPassword}
                   value={password}
                   onChangeText={setPassword}
                 />
+                <TouchableOpacity onPress={() => setShowPassword(p => !p)} style={styles.eyeBtn}>
+                  <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#aaa" />
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -128,8 +137,14 @@ export default function LoginScreen() {
               <Text style={styles.forgotTextBlue}>Forgot password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
-              <Text style={styles.loginBtnText}>Login</Text>
+            <TouchableOpacity
+              style={[styles.loginBtn, loading && { opacity: 0.7 }]}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.loginBtnText}>Login</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => router.replace('/signup')} style={styles.footer}>
@@ -233,6 +248,7 @@ const styles = StyleSheet.create({
   },
   icon: { marginRight: 10 },
   input: { flex: 1, fontSize: 16, color: '#333', fontFamily: 'Nunito-Regular' },
+  eyeBtn: { paddingLeft: 8 },
 
   forgotBtn: { alignSelf: 'flex-end', marginBottom: 25 },
   forgotTextBlue: { 

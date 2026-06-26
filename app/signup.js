@@ -12,6 +12,8 @@ export default function SignupScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [age, setAge] = useState('');
   const [gender, setGender] = useState(null);
   const [profileImage, setProfileImage] = useState(null);
@@ -194,29 +196,35 @@ export default function SignupScreen() {
           {/* Password Input */}
           <View style={styles.inputWrapper}>
             <Ionicons name="lock-closed-outline" size={20} color="#E75480" style={styles.icon} />
-            <TextInput 
-              style={styles.input} 
-              placeholder="Password" 
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
               placeholderTextColor="#999"
               selectionColor="#E75480"
-              secureTextEntry 
-              value={password} 
-              onChangeText={setPassword} 
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
             />
+            <TouchableOpacity onPress={() => setShowPassword(p => !p)} style={styles.eyeBtn}>
+              <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#aaa" />
+            </TouchableOpacity>
           </View>
 
           {/* Confirm Password Input */}
           <View style={styles.inputWrapper}>
             <Ionicons name="shield-checkmark-outline" size={20} color="#E75480" style={styles.icon} />
-            <TextInput 
-              style={styles.input} 
-              placeholder="Confirm Password" 
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm Password"
               placeholderTextColor="#999"
               selectionColor="#E75480"
-              secureTextEntry 
-              value={confirmPassword} 
-              onChangeText={setConfirmPassword} 
+              secureTextEntry={!showConfirmPassword}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
             />
+            <TouchableOpacity onPress={() => setShowConfirmPassword(p => !p)} style={styles.eyeBtn}>
+              <Ionicons name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#aaa" />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -298,6 +306,7 @@ const styles = StyleSheet.create({
   },
   icon: { marginRight: 10 },
   input: { flex: 1, fontSize: 16, color: '#333', fontFamily: 'Nunito-Regular' },
+  eyeBtn: { paddingLeft: 8 },
   genderContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   genderOption: { paddingVertical: 10, paddingHorizontal: 16, borderWidth: 1, borderColor: '#FDEEF4', borderRadius: 20, backgroundColor: '#fff' },
   genderSelected: { borderColor: '#E75480', backgroundColor: '#FFE3ED' },
