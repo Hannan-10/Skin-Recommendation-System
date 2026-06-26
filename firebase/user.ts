@@ -262,6 +262,18 @@ export async function switchToNextProduct(currentScan: {
   }
 }
 
+export async function updateActiveRoutineTimes(routineTimes: string[]) {
+  if (!auth || !db) return
+  const user = auth.currentUser
+  if (!user) return
+  const ref = doc(db, 'users', user.uid)
+  try {
+    await updateDoc(ref, { 'activeRoutine.routineTimes': routineTimes })
+  } catch (e) {
+    console.warn('updateActiveRoutineTimes failed', e)
+  }
+}
+
 export async function clearActiveRoutine() {
   if (!auth || !db) return
   const user = auth.currentUser
