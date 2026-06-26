@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TextInput, 
-  TouchableOpacity, 
-  Image, 
-  ScrollView, 
-  KeyboardAvoidingView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  ScrollView,
+  KeyboardAvoidingView,
   Platform,
-  SafeAreaView 
+  SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +22,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState('error');
   const [modalTitle, setModalTitle] = useState('');
@@ -38,6 +40,7 @@ export default function LoginScreen() {
       setModalVisible(true);
       return;
     }
+    setLoading(true);
     try {
       await loginUser({ email, password });
       setModalType('success');
@@ -51,6 +54,8 @@ export default function LoginScreen() {
       setModalMessage('Incorrect email or password.');
       setModalButton('Try Again');
       setModalVisible(true);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -132,8 +137,14 @@ export default function LoginScreen() {
               <Text style={styles.forgotTextBlue}>Forgot password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
-              <Text style={styles.loginBtnText}>Login</Text>
+            <TouchableOpacity
+              style={[styles.loginBtn, loading && { opacity: 0.7 }]}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.loginBtnText}>Login</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => router.replace('/signup')} style={styles.footer}>
