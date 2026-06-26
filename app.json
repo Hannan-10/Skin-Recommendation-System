@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "admin",
-    "slug": "admin",
+    "name": "Skinalyst",
+    "slug": "skinalyst",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
