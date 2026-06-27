@@ -133,9 +133,16 @@ def _is_predominantly_skin(rgb_arr):
     rgb = rgb_arr.astype(np.float32)
     R, G, B = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
 
-    # Reject green-dominant images first (plants, grass)
+    # Reject green-dominant images (plants, grass)
     green_mask = (G > R + 15) & (G > B + 15) & (G > 50)
     if float(green_mask.sum()) / max(green_mask.size, 1) > 0.25:
+        return False
+
+    # Reject images with significant saturated-red pixels (strawberries, tomatoes,
+    # cherries, red peppers, etc.).  Human skin — even reddish/flushed — never
+    # reaches R > G*1.4 across more than a tiny fraction of a selfie.
+    red_food_mask = (R > 130) & (R > G * 1.4) & (R > B * 1.8)
+    if float(red_food_mask.sum()) / max(red_food_mask.size, 1) > 0.08:
         return False
 
     ycbcr = np.array(Image.fromarray(rgb_arr).convert("YCbCr"), dtype=np.float32)
@@ -148,12 +155,12 @@ def _is_predominantly_skin(rgb_arr):
 
     skin = (
         (Cb >= 77) & (Cb <= 130) &
-        (Cr >= 133) & (Cr <= 173) &   # raised floor to exclude near-white colours
+        (Cr >= 133) & (Cr <= 173) &
         (Y  >= 40)  &
-        (B  >= G * 0.55) &             # 0.55 (was 0.50) rejects brown bread/food tones
-        (saturation >= 0.12)           # rejects coleslaw / pale near-white non-skin
+        (B  >= G * 0.55) &
+        (saturation >= 0.12)
     )
-    return float(skin.sum()) / max(skin.size, 1) >= 0.50  # raised from 0.35 — real close-up skin easily clears 60 %
+    return float(skin.sum()) / max(skin.size, 1) >= 0.50
 
 
 def _is_skin_image(img):
