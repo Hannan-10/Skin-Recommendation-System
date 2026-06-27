@@ -2,6 +2,10 @@ import csv
 import json
 import os
 
+# Force deterministic ops before TF initialises
+os.environ['TF_DETERMINISTIC_OPS'] = '1'
+os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
@@ -9,6 +13,10 @@ from PIL import Image, ImageFilter
 import io
 import keras
 import tensorflow as tf
+
+# Seed everything so model(x, training=False) is fully reproducible
+tf.random.set_seed(42)
+np.random.seed(42)
 
 # ── Face detection (OpenCV Haar cascade — no extra model download needed) ──────
 try:
@@ -120,7 +128,7 @@ def _region_has_skin(rgb_arr, x, y, w, h):
         (Cb >= 77) & (Cb <= 130) &
         (Cr >= 130) & (Cr <= 173) &
         (Y  >= 40) &
-        (B  >= G * 0.55)
+        (B  >= G * 0.65)   # raised: human skin B/G ≥ 0.75, cat/dog fur ≈ 0.55-0.62
     )
     return float(skin.sum()) / max(skin.size, 1) >= 0.25
 
@@ -157,10 +165,17 @@ def _is_predominantly_skin(rgb_arr):
         (Cb >= 77) & (Cb <= 130) &
         (Cr >= 133) & (Cr <= 173) &
         (Y  >= 40)  &
-        (B  >= G * 0.55) &
+        (B  >= G * 0.65) &         # raised: human skin B/G ≥ 0.75; cat/animal fur ≈ 0.55-0.62
         (saturation >= 0.12)
     )
-    return float(skin.sum()) / max(skin.size, 1) >= 0.50
+    # Full-image ratio or generous centre-crop ratio — catches partial face / chin / neck shots
+    full_ratio   = float(skin.sum()) / max(skin.size, 1)
+    h, w         = skin.shape[:2]
+    ch, cw       = h // 2, w // 2
+    rh, rw       = max(1, h * 3 // 8), max(1, w * 3 // 8)
+    centre       = skin[ch - rh:ch + rh, cw - rw:cw + rw]
+    centre_ratio = float(centre.sum()) / max(centre.size, 1)
+    return full_ratio >= 0.42 or centre_ratio >= 0.50
 
 
 def _is_skin_image(img):
@@ -354,7 +369,8 @@ def predict():
         return jsonify({"is_skin": False, "error": "not_skin"})
 
     patches = _extract_type_patches(img)
-    all_probs = type_model.predict(patches, verbose=0)
+    # training=False disables any Dropout in the model → deterministic output
+    all_probs = type_model(patches, training=False).numpy()
     avg_probs = np.mean(all_probs, axis=0)
     idx = int(np.argmax(avg_probs))
     return jsonify({"is_skin": True, "type": TYPE_CLASSES[idx], "confidence": float(avg_probs[idx])})
@@ -372,7 +388,10 @@ def detect():
         return jsonify({"is_skin": False, "detections": []})
 
     x = _preprocess_conditions(img)
-    probs = cond_model.predict(x, verbose=0)[0]
+    # Run 5 forward passes with training=False and average to eliminate any
+    # MC-Dropout stochasticity that caused wildly different results on the same image
+    passes = np.stack([cond_model(x, training=False).numpy()[0] for _ in range(5)])
+    probs  = np.mean(passes, axis=0)
     dets = [
         {"label": COND_CLASSES[i], "confidence": float(probs[i])}
         for i in range(len(COND_CLASSES))
