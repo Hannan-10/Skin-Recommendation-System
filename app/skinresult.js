@@ -248,7 +248,7 @@ export default function SkinResult() {
                     <Animated.View style={[styles.spinner, { transform: [{ rotate: spin }] }]} />
                     <Ionicons name="scan-outline" size={22} color="#F28BA8" />
                   </View>
-                  <Text style={styles.loadingPercent}>{progress}%</Text>
+                  <Text style={styles.loadingPercent}>{Math.floor(progress)}%</Text>
                   <Text style={styles.loadingText}>
                     {progress < 30 ? 'Uploading image...' : progress < 70 ? 'Analyzing skin...' : progress < 90 ? 'Running models...' : 'Almost done...'}
                   </Text>
