@@ -119,6 +119,13 @@ def _region_has_skin(rgb_arr, x, y, w, h):
     if region.size == 0:
         return False
     R, G, B = region[:,:,0], region[:,:,1], region[:,:,2]
+
+    # Orange/yellow animal fur (cats, dogs) has G >> B in a way human skin never does.
+    # Human skin (all tones): G/B < 1.33.  Cat/dog fur: G/B ≈ 1.4–1.75.
+    animal_fur = (R > G * 1.15) & (G > B * 1.35) & (R > 120)
+    if float(animal_fur.sum()) / max(animal_fur.size, 1) > 0.30:
+        return False
+
     ycbcr = np.array(
         Image.fromarray(rgb_arr[y:y+h, x:x+w]).convert("YCbCr"),
         dtype=np.float32
@@ -128,7 +135,7 @@ def _region_has_skin(rgb_arr, x, y, w, h):
         (Cb >= 77) & (Cb <= 130) &
         (Cr >= 130) & (Cr <= 173) &
         (Y  >= 40) &
-        (B  >= G * 0.65)   # raised: human skin B/G ≥ 0.75, cat/dog fur ≈ 0.55-0.62
+        (B  >= G * 0.65)
     )
     return float(skin.sum()) / max(skin.size, 1) >= 0.25
 
@@ -144,6 +151,12 @@ def _is_predominantly_skin(rgb_arr):
     # Reject green-dominant images (plants, grass)
     green_mask = (G > R + 15) & (G > B + 15) & (G > 50)
     if float(green_mask.sum()) / max(green_mask.size, 1) > 0.25:
+        return False
+
+    # Reject orange/yellow animal fur — cat/dog fur has G >> B (G/B ≈ 1.4-1.75);
+    # human skin of every tone has G/B < 1.33, so this gate is safe for all complexions
+    animal_fur_mask = (R > G * 1.15) & (G > B * 1.35) & (R > 120)
+    if float(animal_fur_mask.sum()) / max(animal_fur_mask.size, 1) > 0.25:
         return False
 
     # Reject images with significant saturated-red pixels (strawberries, tomatoes,
