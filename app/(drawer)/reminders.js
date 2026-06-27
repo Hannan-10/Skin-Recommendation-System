@@ -12,14 +12,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import StatusModal from '../components/StatusModal'
 import { getActiveRoutine, updateActiveRoutineTimes } from '../../firebase/user'
 
-// Show notification banner even when app is in foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-})
 
 const CUSTOM_KEY = 'skinalyst_custom_reminders'
 
@@ -75,22 +67,6 @@ async function scheduleDaily(product, timeStr) {
   })
 }
 
-async function sendTestNotification(product) {
-  await ensureAndroidChannel()
-  return Notifications.scheduleNotificationAsync({
-    content: {
-      title: '✨ Skinalyst Reminder',
-      body: `Time to apply your ${product}!`,
-      sound: true,
-      ...(Platform.OS === 'android' && { channelId: CHANNEL_ID }),
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: 3,
-      repeats: false,
-    },
-  })
-}
 
 async function cancelNotif(id) {
   if (!id) return
@@ -322,16 +298,6 @@ export default function Reminders() {
           <Text style={styles.remSub}>{fmt(item.time)} · every day</Text>
           {kind === 'routine' && <Text style={styles.routineBadge}>Routine</Text>}
         </View>
-        <TouchableOpacity
-          style={styles.testBtn}
-          onPress={async () => {
-            if (!hasPermission) { Alert.alert('Notifications Off', 'Enable notifications first.'); return }
-            await sendTestNotification(item.product)
-            Alert.alert('Test Sent', 'A notification will appear in 3 seconds.')
-          }}
-        >
-          <Ionicons name="notifications-outline" size={14} color="#6C63FF" />
-        </TouchableOpacity>
         <TouchableOpacity style={styles.changeBtn} onPress={() => openChange(kind, item)}>
           <Text style={styles.changeBtnText}>Change</Text>
         </TouchableOpacity>
@@ -696,11 +662,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start', marginTop: 4,
     fontSize: 10, fontFamily: 'Nunito-Bold', color: '#00916E',
     backgroundColor: '#E6FBF4', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
-  },
-  testBtn: {
-    marginRight: 8, width: 32, height: 32, borderRadius: 16,
-    backgroundColor: '#EEE9FF', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#C4B5FD',
   },
   changeBtn: {
     backgroundColor: '#FFF0F5', paddingHorizontal: 12, paddingVertical: 6,
