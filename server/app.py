@@ -153,11 +153,10 @@ def _is_predominantly_skin(rgb_arr):
     if float(green_mask.sum()) / max(green_mask.size, 1) > 0.25:
         return False
 
-    # Reject orange/yellow animal fur — cat/dog fur has G >> B (G/B ≈ 1.4-1.75);
-    # human skin of every tone has G/B < 1.33, so this gate is safe for all complexions
-    animal_fur_mask = (R > G * 1.15) & (G > B * 1.35) & (R > 120)
-    if float(animal_fur_mask.sum()) / max(animal_fur_mask.size, 1) > 0.25:
-        return False
+    # NOTE: No animal-fur gate here — warm/golden human hair has identical R/G and G/B
+    # ratios to cat fur, so a full-image fur gate false-positives on portraits with
+    # warm hair. The animal_fur gate lives only in _region_has_skin() where it applies
+    # to the Haar-detected face box (not the whole scene).
 
     # Reject images with significant saturated-red pixels (strawberries, tomatoes,
     # cherries, red peppers, etc.).  Human skin — even reddish/flushed — never
@@ -188,7 +187,7 @@ def _is_predominantly_skin(rgb_arr):
     rh, rw       = max(1, h * 3 // 8), max(1, w * 3 // 8)
     centre       = skin[ch - rh:ch + rh, cw - rw:cw + rw]
     centre_ratio = float(centre.sum()) / max(centre.size, 1)
-    return full_ratio >= 0.42 or centre_ratio >= 0.50
+    return full_ratio >= 0.40 or centre_ratio >= 0.46
 
 
 def _is_skin_image(img):
@@ -210,27 +209,32 @@ def _is_skin_image(img):
     if _USE_FACE_DETECTION:
         rgb_arr = np.array(img.convert("RGB"), dtype=np.uint8)
         gray = _cv2.cvtColor(rgb_arr, _cv2.COLOR_RGB2GRAY)
-        # equalise histogram so dark/bright images are handled uniformly
         gray = _cv2.equalizeHist(gray)
         detections = _FACE_CASCADE.detectMultiScale(
             gray,
             scaleFactor=1.05,
-            minNeighbors=8,      # strict — eliminates food/office false positives
+            minNeighbors=8,
             minSize=(60, 60),
             flags=_cv2.CASCADE_SCALE_IMAGE,
         )
         img_area = gray.shape[0] * gray.shape[1]
-        if len(detections) > 0:
-            for (x, y, w, h) in detections:
-                if (w * h) / img_area < 0.05:  # face < 5% of image → wall art / background person
-                    continue
+
+        # Keep only detections large enough to be a real subject (≥5 % of frame)
+        significant = [(x, y, w, h) for (x, y, w, h) in detections
+                       if (w * h) / img_area >= 0.05]
+
+        if significant:
+            # Haar found face-geometry candidates.  Check each for human skin.
+            for (x, y, w, h) in significant:
                 if _region_has_skin(rgb_arr, x, y, w, h):
                     return True
+            # Haar found face-like regions but NONE passed the human-skin check.
+            # This is the definitive "animal face" signal (cat, dog, etc.).
+            # Do NOT fall through to the colour fallback — return False immediately.
+            return False
 
-        # Cascade missed the face (extreme close-up, partial face, unusual angle).
-        # Fall back: if the WHOLE image is predominantly skin-coloured it is a close-up
-        # skin/face shot. Require a much higher threshold (40 %) than the non-OpenCV path
-        # so that food / offices with occasional warm pixels don't slip through.
+        # Haar found nothing significant (close-up, partial face, unusual angle).
+        # Use the colour fallback so chin/neck/forehead close-ups still work.
         return _is_predominantly_skin(rgb_arr)
 
     # ── Color-based fallback ──────────────────────────────────────────────────
